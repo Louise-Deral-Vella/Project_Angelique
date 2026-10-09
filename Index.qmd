@@ -62,20 +62,24 @@ light$Type_bis = ifelse(startsWith(light$Transect_09.26,"TC"), "CONTROL","TRANSE
 
 light_pink = subset(light, light$Bague < 2000) # 1944 seedlings were subsetted in a new table. (Within light measurements every plant ring above 2000 belongs to new seedlings therefore excluded here). 
 light_pink_TC = subset(light_pink, light_pink$Type_bis == "TRANSECT") 
-light_pink_duplicates = light_pink %>% group_by(Bague) %>% mutate(nbdoublons=n()) # number of duplicates are searched
-duplicates_light = subset(light_pink_duplicates, light_pink_duplicates$nbdoublons > 2) # select if number of duplicates > 2 based on the fact that each plant ring number might be and could be used twice (one for control and one for exploited transects)
-write.csv2(duplicates_light, file="duplicates_light.csv")
-duplicates_light_treat = read.csv("Raw_data_modified/pink_duplicates_treated.csv", header=T,dec=",", sep=",") # delete duplicates 
-duplicates_light_treat = duplicates_light_treat[,-1]
-light_pink_no_duplicates = subset(light_pink_duplicates, light_pink_duplicates$nbdoublons < 3)
-light_pink_no_duplicates$Time_09.26 = as.character(light_pink_no_duplicates$Time_09.26)
-light_pink_no_duplicates$Date_09.26 = as.character(light_pink_no_duplicates$Date_09.26)
-light_pink = rbind(light_pink_no_duplicates, duplicates_light_treat) # we deleted 35 duplicate values 
-light_pink_final = light_pink[-c(1411,1119,1142,1626,1724,1210),] # we delete 6 more duplicates 
-light_pink_final = light_pink_final[,-c(11:19)]
+light_pink_C = subset(light_pink, light_pink$Type_bis == "CONTROL")
+
+light_pink_duplicates_TC = light_pink_TC %>% group_by(Bague) %>% mutate(nbdoublons=n()) # number of duplicates are searched
+light_pink_duplicates_C = light_pink_C %>% group_by(Bague) %>% mutate(nbdoublons=n()) # number of duplicates are searched
+
+write.csv2(light_pink_duplicates_TC, file="duplicates_light_pink_TC.csv")
+write.csv2(light_pink_duplicates_C, file="duplicates_light_pink_C.csv")
+
+light_T_treat = read.csv("Raw_data_modified/duplicates_T_pink_treated.csv", header=T,dec=",", sep=",") # delete duplicates in pink seedlings in transect
+light_C_treat = read.csv("Raw_data_modified/duplicates_C_light_pink_treated.csv", header=T,dec=",", sep=",")# delete duplicates in pink seedlings in control
+light_T_treat = light_T_treat[,-1]
+
+light_pink_treat = rbind(light_T_treat,light_C_treat)
+
+light_pink_treat = light_pink_treat[,-11]
 
 # Modification of "previous_data" table
-previous_data$Type_bis = ifelse(startsWith(previous_data$Type,"CONTROL"), "CONTROL","TRANSECT")
+previous_data$Type_bis = ifelse(previous_data$Type=="CONTROL", "CONTROL","TRANSECT")
 
 ```
 
@@ -84,8 +88,9 @@ Combining datasets for data alignment
 ```{r}
 pink_data = left_join(previous_data, browsing_pink, by=(c("Bague" = "Bague", "Type_bis" = "Type_bis")))
 pink_data = left_join(pink_data, growth_pink)
-pink_data = left_join(pink_data, light_pink_final) # Each row now represents a seedling with all of its corresponding data variables :) 
+pink_data = left_join(pink_data, light_pink_treat) # Each row now represents a seedling with all of its corresponding data variables :) 
 pink_data_clean = pink_data[,-c(1,68)]
+sum(is.na(pink_data_clean$ER_09.26))
 ```
 
 Now we check the problem of two columns of "state alive and death
@@ -119,7 +124,9 @@ Missing_value_pink = pink_data_clean[!complete.cases(pink_data_clean[, -c(1:65,7
 
 # We subset only for the alive seedlings
 Missing_value_pink_alive = subset(Missing_value_pink, Missing_value_pink$Etat_09.26.y=="V")
-write.csv(Missing_value_pink_alive, "Missing_value_pink.csv") # we have 126 seedlings alive with missing value (probably mainly light)
+write.csv(Missing_value_pink_alive, "Missing_value_pink.csv") # we have 75 seedlings alive with missing value (probably mainly light)
+sum(is.na(Missing_value_pink_alive$ER_09.26)) # we have 30 data light missing
+
 
 # Dead alive seedlings 
 Undead_pink <- pink_data_clean %>% mutate(Undead = ifelse(Etat_09.26.y == "M", ifelse(Haut_cm_09.26 != 0 & !is.na(Haut_cm_09.26) & Haut_cm_09.26!= "" & D1_mm_09.26 != 0 & !is.na(D1_mm_09.26) & D1_mm_09.26 != "" & D2_mm_09.26 != 0 & !is.na(D2_mm_09.26) & D2_mm_09.26 != "", T, F), F)) %>% filter(Undead == T)
