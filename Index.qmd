@@ -1,0 +1,293 @@
+---
+use
+---
+
+title: "Project Roadmap" author: "Angelique Team" format: html editor: visual ---
+
+Here, all the libraries needed for our project
+
+```{r}
+library(dplyr)
+library(tidyverse)
+```
+
+# Compiling data tables and managing duplicates
+
+## Pink seedlings
+
+Importing DATA
+
+```{r}
+previous_data = read.csv("Raw_data/ARTEMIA_suivi_plantules_ALLDATA_03-2026.csv", header =T, sep=",",dec=".") # data import
+str(previous_data) # checking the type of variables - all is OK 
+
+browsing_pink = read.csv("Raw_data/Feuille terrain FTH 2026 Abrout. ROSE.csv", header =T, sep=";",dec=",")
+str(browsing_pink) # all the variable are well defined
+
+growth_pink = read.csv("Raw_data/Copie de Feuille terrain FTH 2026 Ecophy ROSE.csv", header =T, sep=",",dec=".") # "," changed to "."
+growth_pink[5,4] = "32,8" # two commas
+str(growth_pink)  # all the "numeric" variables are defined as "character"
+growth_pink = growth_pink %>% mutate_at(c(4:14),as.numeric) # transform the columns from 4 to 14 into numerical 
+
+light = read.csv("Raw_data/Donnees_Lumiere_associees.csv", header =T, sep=",",dec=",") 
+str(light) # two columns are misidentified
+light = light %>% mutate_at(c(9,7),as.numeric) 
+
+```
+
+Modifications of different data tables for "pink" seedlings
+
+```{r}
+# Modification of "browsing" table 
+browsing_pink = browsing_pink[,c(2,3,10,11,12)]
+browsing_pink = browsing_pink %>% rename(Etat_09.26=Etat, Abrout_09.26=Abrout.,Commentaire_09.26 = Commentaire,Bague=Bague_R)
+browsing_pink = browsing_pink %>% rename(Commentaire_Abrout_09.26 = Commentaire_09.26)
+browsing_pink$Type_bis = ifelse(startsWith(browsing_pink$Placette,"TC"), "CONTROL","TRANSECT") 
+browsing_pink= browsing_pink[,-1]
+
+# Modification of "growth" table
+growth_pink = growth_pink[,-c(1)]
+colnames(growth_pink) <- paste(colnames(growth_pink), "09.26", sep = "_") # adding a suffix to all columns
+growth_pink = growth_pink %>% rename(Bague = Bague_R_09.26) 
+growth_pink = growth_pink %>% rename(Placette = Placette_09.26) 
+growth_pink = growth_pink %>% rename(Commentaire_Ecophy_09.26 = Comm_09.26)
+growth_pink$Type_bis = ifelse(startsWith(growth_pink$Placette,"TC"), "CONTROL","TRANSECT") 
+growth_pink= growth_pink[,-1]
+
+# Modification of "light" table 
+colnames(light) <- paste(colnames(light), "09.26", sep = "_")
+light = light %>% rename(Bague = Bague_09.26) 
+light = light %>% rename(Commentaire_light_09.26 = Commentaire_09.26)
+light$Type_bis = ifelse(startsWith(light$Transect_09.26,"TC"), "CONTROL","TRANSECT")
+
+light_pink = subset(light, light$Bague < 2000) # 1944 seedlings were subsetted in a new table. (Within light measurements every plant ring above 2000 belongs to new seedlings therefore excluded here). 
+light_pink_TC = subset(light_pink, light_pink$Type_bis == "TRANSECT") 
+light_pink_duplicates = light_pink %>% group_by(Bague) %>% mutate(nbdoublons=n()) # number of duplicates are searched
+duplicates_light = subset(light_pink_duplicates, light_pink_duplicates$nbdoublons > 2) # select if number of duplicates > 2 based on the fact that each plant ring number might be and could be used twice (one for control and one for exploited transects)
+write.csv2(duplicates_light, file="duplicates_light.csv")
+duplicates_light_treat = read.csv("Raw_data_modified/pink_duplicates_treated.csv", header=T,dec=",", sep=",") # delete duplicates 
+duplicates_light_treat = duplicates_light_treat[,-1]
+light_pink_no_duplicates = subset(light_pink_duplicates, light_pink_duplicates$nbdoublons < 3)
+light_pink_no_duplicates$Time_09.26 = as.character(light_pink_no_duplicates$Time_09.26)
+light_pink_no_duplicates$Date_09.26 = as.character(light_pink_no_duplicates$Date_09.26)
+light_pink = rbind(light_pink_no_duplicates, duplicates_light_treat) # we deleted 35 duplicate values 
+light_pink_final = light_pink[-c(1411,1119,1142,1626,1724,1210),] # we delete 6 more duplicates 
+light_pink_final = light_pink_final[,-c(11:19)]
+
+# Modification of "previous_data" table
+previous_data$Type_bis = ifelse(startsWith(previous_data$Type,"CONTROL"), "CONTROL","TRANSECT")
+
+```
+
+Combining datasets for data alignment
+
+```{r}
+pink_data = left_join(previous_data, browsing_pink, by=(c("Bague" = "Bague", "Type_bis" = "Type_bis")))
+pink_data = left_join(pink_data, growth_pink)
+pink_data = left_join(pink_data, light_pink_final) # Each row now represents a seedling with all of its corresponding data variables :) 
+pink_data_clean = pink_data[,-c(1,68)]
+```
+
+Now we check the problem of two columns of "state alive and death
+
+```{r}
+# First change the "/" and "-" into NA
+pink_data_clean$Etat_09.26.y[pink_data_clean$Etat_09.26.y == "-" | pink_data_clean$Etat_09.26.y == "/"] <- NA
+
+pink_data_clean$Etat_09.26.x[pink_data_clean$Etat_09.26.x == "-" | pink_data_clean$Etat_09.26.x == "/"] <- NA
+
+# Complete the columns Etat_09.26.x with the information of Etat_09.26.y
+
+pink_data_clean$Etat_09.26.y <- ifelse(is.na(pink_data_clean$Etat_09.26.y) & 
+                                 (pink_data_clean$Haut_cm_09.26 == 0 | pink_data_clean$Haut_cm_09.26 == "" |
+                                    is.na(pink_data_clean$Haut_cm_09.26) | pink_data_clean$D1_mm_09.26 == 0 | is.na(pink_data_clean$D1_mm_09.26) |
+                                    pink_data_clean$D1_mm_09.26 == ""
+                                  | pink_data_clean$D2_mm_09.26 == 0 | is.na(pink_data_clean$D2_mm_09.26) | pink_data_clean$D2_mm_09.26 != "" ),
+                                 pink_data_clean$Etat_09.26.x, pink_data_clean$Etat_09.26.y)
+
+# Complete the columns Etat_09.26.x with the information of Etat_03.26
+pink_data_clean$Etat_09.26.y  = ifelse(pink_data_clean$Etat_09.26.y ==""&pink_data_clean$Etat_03.26=="M", pink_data_clean$Etat_03.26,pink_data_clean$Etat_09.26.y )
+  
+# Delete the useless columns 
+pink_data_clean = pink_data_clean[,-66]
+```
+
+Now we create a data frame with the seedlings having NA for the mesure of 09/2026 and the data.frame for the death/alive seedlings
+
+```{r}
+Missing_value_pink = pink_data_clean[!complete.cases(pink_data_clean[, -c(1:65,75:79)]),] # this is all the lines with missing value except for herbivory
+
+# We subset only for the alive seedlings
+Missing_value_pink_alive = subset(Missing_value_pink, Missing_value_pink$Etat_09.26.y=="V")
+write.csv(Missing_value_pink_alive, "Missing_value_pink.csv") # we have 126 seedlings alive with missing value (probably mainly light)
+
+# Dead alive seedlings 
+Undead_pink <- pink_data_clean %>% mutate(Undead = ifelse(Etat_09.26.y == "M", ifelse(Haut_cm_09.26 != 0 & !is.na(Haut_cm_09.26) & Haut_cm_09.26!= "" & D1_mm_09.26 != 0 & !is.na(D1_mm_09.26) & D1_mm_09.26 != "" & D2_mm_09.26 != 0 & !is.na(D2_mm_09.26) & D2_mm_09.26 != "", T, F), F)) %>% filter(Undead == T)
+
+write_csv(Undead_pink,"undead_pink.csv")
+
+# Alive dead seedlings
+not_alive_pink <- pink_data_clean %>% mutate(not_alive = ifelse(Etat_09.26.y == "V", ifelse((Haut_cm_09.26 == 0 | is.na(Haut_cm_09.26) | Haut_cm_09.26 == "")&(D1_mm_09.26 == 0 | is.na(D1_mm_09.26) | D1_mm_09.26 == "" )&(
+D2_mm_09.26 == 0 | is.na(D2_mm_09.26) | D2_mm_09.26 == ""), T, F), F)) %>% filter(not_alive == T)
+
+write_csv(not_alive_pink,"not_alive_pink.csv")
+
+```
+
+## Orange data
+
+Importing data corresponding to new seedlings - "orange" data tables
+
+The data are in "raw_data_modified" file because the empty lines were delete directly in Excel.
+
+```{r}
+Browsing_Orange = read.csv("Raw_data_modified/ Abrout_ORANGE.csv", header=T, sep=";", dec=",")
+
+Growth_Orange = read.csv("Raw_data_modified/Ecophy_ORANGE.csv", header=T, sep=";", dec=",")
+
+Genet_Orange = read.csv("Raw_data_modified/Genet_ORANGE.csv", header=T, sep=";", dec=",")
+
+```
+
+Modification of "orange" data tables
+
+```{r}
+## Modifications of "Browsing" data
+Browsing_Orange = Browsing_Orange[, c(3,4,5,6,7)] #removing unnecessary columns
+#renaming columns
+colnames(Browsing_Orange) <- paste(colnames(Browsing_Orange), "09.26", sep = "_") 
+Browsing_Orange = Browsing_Orange %>% rename(Bague = Bague_O_09.26)
+Browsing_Orange = Browsing_Orange %>% rename(Commentaire_Abrout_09.26 = Commentaire_09.26)
+Browsing_Orange$Type_bis = ifelse(startsWith(Browsing_Orange$Placette, "TC"), "CONTROL", "TRANSECT") #Creation of a new column that clearly separates "control" and "transect" seedlings
+Browsing_Orange = Browsing_Orange[, -1] #removal of the column "Placette"
+
+## Modifications of "Growth" data
+Growth_Orange = Growth_Orange[,-1:-2]
+# We rename colones
+colnames(Growth_Orange) <- paste(colnames(Growth_Orange), "09.26", sep = "_")
+Growth_Orange = Growth_Orange %>% rename(Bague = Bague_O_09.26)
+Growth_Orange = Growth_Orange %>% rename(Commentaire_Ecophy_09.26 = Comm_09.26)
+Growth_Orange$Type_bis = ifelse(startsWith(Growth_Orange$Carre, "TC"), "CONTROL", "TRANSECT") #Creation of a new column that clearly separates "control" and "transect" seedlings
+Growth_Orange = Growth_Orange[, -1] #removal of the column "Placette"
+
+## Modifications of "Genetic" data 
+Genet_Orange$Type_bis = ifelse(startsWith(Genet_Orange$T, "TC"), "CONTROL", "TRANSECT") #Creation of a new column that clearly separates "control" and "transect" seedlings
+Genet_Orange = Genet_Orange %>% rename(Bague = Bague_O) #renaming a column
+Genet_Orange = Genet_Orange %>% rename(Commentaire_Genet_09.26 = Comm)
+
+## Data compilation and alignment
+Data_Orange_1 <- left_join(Genet_Orange, Browsing_Orange)
+Data_Orange_2 <- left_join(Data_Orange_1, Growth_Orange)
+
+```
+
+Treat duplicates in the light data set
+
+```{r}
+## Modifications of "light" data 
+Light_Orange <- filter(light, Bague >= 2000)
+Light_Orange$Type_bis = ifelse(startsWith(Light_Orange$Transect, "TC"), "CONTROL", "TRANSECT")
+
+## Dealing with duplicates
+Light_orange_duplicates_TC <- subset(Light_Orange, Light_Orange$Type_bis == "CONTROL")
+Doublon_Control <-Light_orange_duplicates_TC %>% group_by(Bague) %>% mutate(ndoublons = n())
+
+Light_orange_duplicates_Transect <- subset(Light_Orange, Light_Orange$Type_bis == "TRANSECT")
+Doublon_Transect <- Light_orange_duplicates_Transect %>% group_by(Bague) %>% mutate(ndoublons = n())
+
+# Verification of variables in subsetted files
+Light_orange_duplicates_TC <- subset(Light_Orange, Light_Orange$Type_bis == "CONTROL")
+Doublon_Control <-Light_orange_duplicates_TC %>% group_by(Bague) %>% mutate(ndoublons = n())
+
+Light_orange_duplicates_Transect <- subset(Light_Orange, Light_Orange$Type_bis == "TRANSECT")
+Doublon_Transect <- Light_orange_duplicates_Transect %>% group_by(Bague) %>% mutate(ndoublons = n())
+
+# Deleting duplicates
+Doublon_Transect_treat = Doublon_Transect[-c(191,252),]
+Doublon_Control_treat = Doublon_Control[-c(140,128,14,52,28),]
+
+# Merge the two dataset treat 
+Light_Orange <- rbind(Doublon_Transect_treat,Doublon_Control_treat)
+Light_Orange = Light_Orange[,-11]
+
+```
+
+Try to see the differences between Orange 2 data table and Light Orange
+
+```{r}
+Data_Orange_2_key = Data_Orange_2[,c(4,10)]
+Light_Orange_key = Light_Orange[,c(2,10)]
+
+anti_join(Data_Orange_2_key,Light_Orange_key) # tell us the 6 seedlings we dont have for the light
+
+# I create 6 lines with NA for the missing value for the 6 seedlings missing in the Light_Orange data set
+missed_light <- data.frame(Transect_09.26=c("T6","T6","T6","T6","TC","TC"),
+                  Bague=c(2215,2217,2220,2238,2041,2156),
+                  fichier_09.26=c(NA,NA,NA,NA,NA,NA),
+                  N_Sunscan_09.26 =c(NA,NA,NA,NA,NA,NA),
+                  Commentaire_light_09.26 = c(NA,NA,NA,NA,NA,NA),
+                  Time_09.26 = c(NA,NA,NA,NA,NA,NA),
+                  Spread_09.26 = c(NA,NA,NA,NA,NA,NA),
+                  Date_09.26 = c(NA,NA,NA,NA,NA,NA),
+                  ER_09.26 = c(NA,NA,NA,NA,NA,NA),
+                  Type_bis = c("TRANSECT","TRANSECT","TRANSECT","TRANSECT","CONTROL","CONTROL"))
+# Add this 6 lines to Light_Orange
+
+Light_Orange = rbind(Light_Orange, missed_light)
+
+
+# Now we can merge all the orange data
+Data_Orange <- left_join(Data_Orange_2, Light_Orange, by = c("Bague" = "Bague", "Type_bis" = "Type_bis"))
+
+```
+
+Now, we check if there is no NA data for the orange. We built a data frame with all the seedlings to check in the field sheet.
+
+```{r}
+Missing_value_orange = Data_Orange[!complete.cases(Data_Orange[, -c(20:24)]),] # this is all the lines with missing value except for herbivory
+
+write.csv(Missing_value_orange, "Missing_value_orange.csv")
+
+```
+
+## Merge Pink and Orange Data
+
+We combine the data table of the orange and the pink seedlings
+
+```{r}
+
+```
+
+We check if the diameter measurement are valid
+
+```{r}
+
+```
+
+## Captors data
+
+First, We import the data. For the TOMST captor, we need to redefine the separator.
+
+```{r}
+# import Lascar data
+Lascar = read.table("Alldata_LASCARS.csv", header=T, sep=",", dec=".")
+Lascar[49004,6]="T5_2_20" # correction d'une donnée mal écrite
+# import Tomst data
+TOMST = readLines("Alldata_TOMST.csv")
+TOMST = gsub('^"|"$', '', TOMST) # I need to correct the sep definition
+TOMST = gsub('""', '"', TOMST)
+TOMST = read.csv(text = TOMST,sep = ",",header = TRUE)
+```
+
+We summarize the data by calculating the mean of each variable for each captor for the period study.
+
+```{r}
+# moyenne pour les TOMST 
+Tomst_mean = TOMST %>% group_by(serial_number,height) %>% summarise (mean(value)) 
+# Nous avons donc la moyenne des valeurs relevés pour chaque capteur et chaque profondeur
+
+# moyenne pour les lascar 
+Lascar_mean = Lascar %>% group_by(id_capteur) %>% summarise (mean(celsius_c),mean(humidity_percent_rh), mean(dew_point_c))
+```
+
+## 
