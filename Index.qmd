@@ -1,8 +1,9 @@
 ---
-use
+title: "Project Roadmap" 
+author: "Angelique Team" 
+format: html 
+editor: visual 
 ---
-
-title: "Project Roadmap" author: "Angelique Team" format: html editor: visual ---
 
 Here, all the libraries needed for our project
 
@@ -131,6 +132,12 @@ write_csv(not_alive_pink,"not_alive_pink.csv")
 
 ```
 
+Rename columns for association of data set
+
+```{r}
+pink_data_clean = pink_data_clean %>% rename(Etat_09.26 = Etat_09.26.y)
+```
+
 ## Orange data
 
 Importing data corresponding to new seedlings - "orange" data tables
@@ -211,8 +218,7 @@ sum(is.na(Data_Orange$ER_09.26)) # two seedlings have NA for light
 
 ```
 
-Now, we check if there is no NA data for the orange.
-We built a data frame with all the seedlings to check in the field sheet.
+Now, we check if there is no NA data for the orange. We built a data frame with all the seedlings to check in the field sheet.
 
 ```{r}
 Missing_value_orange = Data_Orange[!complete.cases(Data_Orange[, -c(20:24)]),] # this is all the lines with missing value except for herbivory
@@ -221,11 +227,21 @@ write.csv(Missing_value_orange, "Missing_value_orange.csv")
 
 ```
 
+Rename data set orange columns as data set pinf to merge
+
+```{r}
+Data_Orange = Data_Orange %>% rename(Piquet_ref = Piquet_Ref)
+Data_Orange = Data_Orange %>% rename(Abrout_09.26 = Abrout._09.26)
+Data_Orange = Data_Orange %>% rename(Transect = T)
+Data_Orange = Data_Orange[,-c(1,10)]
+```
+
 ## Merge Pink and Orange Data
 
 We combine the data table of the orange and the pink seedlings
 
 In search for common columns
+
 ```{r}
 common_columns <- intersect(names(pink_data_clean), names(Data_Orange))
 print(common_columns)
@@ -235,12 +251,11 @@ print(common_columns)
 Only_in_pink <- setdiff(names(pink_data_clean), names(Data_Orange))
 print(Only_in_pink)
 ```
+
 ```{r}
 Only_in_orange <- setdiff(names(Data_Orange), names(pink_data_clean))
 print(Only_in_orange)
 ```
-
-
 
 We check if the diameter measurement are valid
 
@@ -250,8 +265,7 @@ We check if the diameter measurement are valid
 
 ## Captors data
 
-First, We import the data.
-For the TOMST captor, we need to redefine the separator.
+First, We import the data. For the TOMST captor, we need to redefine the separator.
 
 ```{r}
 # import Lascar data
