@@ -1,0 +1,10 @@
+"","Date","T","Placette","Bague","Piquet_Ref","Azimut","Dist_m","Genet","Commentaire_Genet_09.26","Type_bis","Etat_09.26","Abrout._09.26","Commentaire_Abrout_09.26","Haut_cm_09.26","D1_mm_09.26","D2_mm_09.26","N_feuil_09.26","Folmax_09.26","Nherb_09.26","Herb1_09.26","Herb2_09.26","Herb3_09.26","Herb4_09.26","Herb5_09.26","Commentaire_Ecophy_09.26","Transect_09.26","fichier_09.26","N_Sunscan_09.26","Commentaire_light_09.26","Time_09.26","Spread_09.26","Date_09.26","ER_09.26"
+"148","","T2","B0",2148,"B0",40,0.62,"KG24","","TRANSECT","V","NB","",NA,NA,NA,NA,NA,NA,2,8,2,NA,NA,"","T2","T2fichier2.txt",34,"","16:56:19",0.05,"2026-09-14",19.5210122006326
+"215","16/09/2026","T6","A0",2215,"A0",151,3.89,"KG74","","TRANSECT","V","NB","",16.7,2.01,2.15,2,1,0,NA,NA,NA,NA,NA,"","T6",NA,NA,NA,NA,NA,NA,NA
+"217","16/09/2026","T6","A1",2217,"A1",165,3.34,"KG86","","TRANSECT","V","NB","",15.9,2.44,2.48,4,1,1,2,NA,NA,NA,NA,"","T6",NA,NA,NA,NA,NA,NA,NA
+"220","16/09/2026","T6","A1",2220,"A1",168,4.33,"KG89","","TRANSECT","V","NB","",9,2.14,1.93,2,1,1,2,NA,NA,NA,NA,"","T6",NA,NA,NA,NA,NA,NA,NA
+"238","16/09/2026","T6","A1",2238,"B2",328,4.1,"KH02","","TRANSECT","V","NB","",15.3,1.6,1.65,2,1,0,NA,NA,NA,NA,NA,"","T6",NA,NA,NA,NA,NA,NA,NA
+"296","16/09/2026","TC","A5",2041,"CB5",8,1.12,"KH76","","CONTROL","V","NB","",12.2,1.8,1.92,4,1,2,2,2,NA,NA,NA,"","TC",NA,NA,NA,NA,NA,NA,NA
+"411","18/09/2026","TC","D3",2156,"CE4",78,6.54,"KI91","","CONTROL","V","NB","",10.2,1.39,1.5,2,1,0,NA,NA,NA,NA,NA,"","TC",NA,NA,NA,NA,NA,NA,NA
+"432","","TC","TCZ4",2183,"",NA,NA,"","","CONTROL","V","NB","",14.4,1.84,1.73,4,1,1,2,NA,NA,NA,NA,"ref A4 4,90/98","TC","TC_18_09.txt",243,"","10:51:07",0.35,"2026-09-18",0.0666324961558175
+"433","","TC","TCZ4",2184,"",NA,NA,"","","CONTROL","","","",14.5,1.93,2.14,2,1,2,4,2,NA,NA,NA,"NB 3/6 ref Z5/3,63","TC","TC_18_09.txt",254,"","10:56:26",0.15,"2026-09-18",0.155325443786982
