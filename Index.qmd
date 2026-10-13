@@ -211,7 +211,8 @@ sum(is.na(Data_Orange$ER_09.26)) # two seedlings have NA for light
 
 ```
 
-Now, we check if there is no NA data for the orange. We built a data frame with all the seedlings to check in the field sheet.
+Now, we check if there is no NA data for the orange.
+We built a data frame with all the seedlings to check in the field sheet.
 
 ```{r}
 Missing_value_orange = Data_Orange[!complete.cases(Data_Orange[, -c(20:24)]),] # this is all the lines with missing value except for herbivory
@@ -224,9 +225,22 @@ write.csv(Missing_value_orange, "Missing_value_orange.csv")
 
 We combine the data table of the orange and the pink seedlings
 
+In search for common columns
 ```{r}
-
+common_columns <- intersect(names(pink_data_clean), names(Data_Orange))
+print(common_columns)
 ```
+
+```{r}
+Only_in_pink <- setdiff(names(pink_data_clean), names(Data_Orange))
+print(Only_in_pink)
+```
+```{r}
+Only_in_orange <- setdiff(names(Data_Orange), names(pink_data_clean))
+print(Only_in_orange)
+```
+
+
 
 We check if the diameter measurement are valid
 
@@ -236,7 +250,8 @@ We check if the diameter measurement are valid
 
 ## Captors data
 
-First, We import the data. For the TOMST captor, we need to redefine the separator.
+First, We import the data.
+For the TOMST captor, we need to redefine the separator.
 
 ```{r}
 # import Lascar data
