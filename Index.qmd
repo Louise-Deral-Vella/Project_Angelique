@@ -257,6 +257,11 @@ Only_in_orange <- setdiff(names(Data_Orange), names(pink_data_clean))
 print(Only_in_orange)
 ```
 
+```{r}
+Merged_Pink_Orange <- full_join(pink_data_clean, Data_Orange, by = common_columns)
+```
+
+
 We check if the diameter measurement are valid
 
 ```{r}
