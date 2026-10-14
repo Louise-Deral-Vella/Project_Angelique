@@ -140,6 +140,103 @@ Rename columns for association of data set
 pink_data_clean = pink_data_clean %>% rename(Etat_09.26 = Etat_09.26.y)
 ```
 
+herbivory (insect) detection of inconsistencies
+
+(modified directly on the data)
+
+```{r}
+#On cherche les colones qui ont des incoherences d'herbivory
+df_checked_pink <- pink_data_clean %>%
+  rowwise() %>%
+  mutate(
+    # Compter les colonnes Herb_1:Herb_5 qui sont ni NA ni 0
+    n_herb_cols = sum(!is.na(c_across(Herb1_09.26:Herb5_09.26)) & c_across(Herb1_09.26:Herb5_09.26) != 0),
+    
+    # Valeur attendue (N_herb plafonné à 5)
+    attendu = ifelse(Nherb_09.26 > 5, 5, Nherb_09.26),
+    
+    # Test de cohérence
+    erreur = n_herb_cols != attendu
+  ) %>%
+  ungroup()
+
+# Filtrer uniquement les incohérences
+df_checked_pink <- df_checked_pink %>% filter(erreur)
+
+```
+
+Creation of a predicted diameter
+
+```{r}
+
+# Détection des valeurs de diamètre trop différentes
+err_diam_pink <- pink_data_clean %>%
+  mutate(
+    diff_pct_Diam = abs(D2_mm_09.26 - D1_mm_09.26) /
+      ((D1_mm_09.26 + D2_mm_09.26) / 2) * 100,
+    diff_Diam = abs(D1_mm_09.26 - D2_mm_09.26)
+  ) %>%
+  filter(diff_pct_Diam >= 20 & diff_Diam >= 0.5)
+
+
+# Régression linéaire
+df_filtered_rose <- pink_data_clean %>%
+  mutate(
+    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2,
+    diff_pct_Diam = abs(D2_mm_09.26 - D1_mm_09.26) /
+      D_moy_09.26 * 100,
+    diff_Diam = abs(D1_mm_09.26 - D2_mm_09.26)
+  ) %>%
+  filter(diff_pct_Diam <= 20 & diff_Diam <= 0.5)
+
+# Ajustement du modèle de prédiction
+m_quad_rose <- lm(
+  D_moy_09.26 ~ Haut_cm_09.26 + I(Haut_cm_09.26^2),
+  data = df_filtered_rose
+)
+
+# Application du modèle : ajout du diamètre moyen et de la prédiction
+pink_data_clean <- pink_data_clean %>%
+  mutate(
+    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2,
+    Pred_D_moy_09.26 = predict(m_quad_rose, newdata = pink_data_clean)
+  )
+
+# Ajout des prédictions dans le tableau des diamètres incohérents
+err_diam_pink <- err_diam_pink %>%
+  left_join(
+    pink_data_clean %>%
+      select(Bague, Transect, D1_mm_09.26, D2_mm_09.26,
+             Pred_D_moy_09.26),
+    by = c("Bague", "Transect", "D1_mm_09.26", "D2_mm_09.26"),
+    suffix = c("", "_pred")
+  )
+
+# Remplacement du diamètre moyen par le diamètre le plus proche
+# de la prédiction
+err_diam_pink <- err_diam_pink %>%
+  mutate(
+    D_closest = ifelse(
+      abs(D1_mm_09.26 - Pred_D_moy_09.26) <=
+        abs(D2_mm_09.26 - Pred_D_moy_09.26),
+      D1_mm_09.26,
+      D2_mm_09.26
+    )
+  ) %>%
+  mutate(D_moy_09.26 = D_closest) %>%
+  select(-D_closest, -diff_pct_Diam, -diff_Diam)
+
+# On ajoute les lignes corrigées au tableau original
+pink_data_clean <- pink_data_clean %>%
+  anti_join(
+    err_diam_pink,
+    by = c("Bague", "Transect", "D1_mm_09.26", "D2_mm_09.26")
+  ) %>%
+  bind_rows(err_diam_pink)
+
+
+```
+
 ## Orange data
 
 Importing data corresponding to new seedlings - "orange" data tables
@@ -223,8 +320,7 @@ sum(is.na(Data_Orange$ER_09.26)) # two seedlings have NA for light
 
 ```
 
-Now, we check if there is no NA data for the orange.
-We built a data frame with all the seedlings to check in the field sheet.
+Now, we check if there is no NA data for the orange. We built a data frame with all the seedlings to check in the field sheet.
 
 ```{r}
 Missing_value_orange = Data_Orange[!complete.cases(Data_Orange[, -c(20:24)]),] # this is all the lines with missing value except for herbivory
@@ -240,6 +336,103 @@ Data_Orange = Data_Orange %>% rename(Piquet_ref = Piquet_Ref)
 Data_Orange = Data_Orange %>% rename(Abrout_09.26 = Abrout._09.26)
 Data_Orange = Data_Orange %>% rename(Transect = T)
 Data_Orange = Data_Orange[,-c(1,10)]
+```
+
+herbivory (insect) detection of inconsistencies
+
+(modified directly on the data)
+
+```{r}
+df_checked <- Data_Orange %>%
+  rowwise() %>%
+  mutate(
+    # Compter les colonnes Herb_1:Herb_5 qui sont ni NA ni 0
+    n_herb_cols = sum(!is.na(c_across(Herb1_09.26:Herb5_09.26)) & c_across(Herb1_09.26:Herb5_09.26) != 0),
+    
+    # Valeur attendue (N_herb plafonné à 5)
+    attendu = ifelse(Nherb_09.26 > 5, 5, Nherb_09.26),
+    
+    # Test de cohérence
+    erreur = n_herb_cols != attendu
+  ) %>%
+  ungroup()
+
+# Filtrer uniquement les incohérences
+df_checked <- df_checked %>% filter(erreur)
+
+
+```
+
+Creation of a predicted diameter
+
+```{r}
+# Détection des valeurs de diamètre trop différentes
+err_diam_orange <- Data_Orange %>%
+  mutate(
+    diff_pct_Diam = abs(D2_mm_09.26 - D1_mm_09.26) /
+      ((D1_mm_09.26 + D2_mm_09.26) / 2) * 100,
+    diff_Diam = abs(D1_mm_09.26 - D2_mm_09.26)
+  ) %>%
+  filter(diff_pct_Diam >= 20 & diff_Diam >= 0.5)
+
+
+# Régression linéaire
+df_filtered_orange <- Data_Orange %>%
+  mutate(
+    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2,
+    diff_pct_Diam = abs(D2_mm_09.26 - D1_mm_09.26) /
+      D_moy_09.26 * 100,
+    diff_Diam = abs(D1_mm_09.26 - D2_mm_09.26)
+  ) %>%
+  filter(diff_pct_Diam <= 20 & diff_Diam <= 0.5)
+
+# Ajustement du modèle de prédiction
+m_quad_orange <- lm(
+  D_moy_09.26 ~ Haut_cm_09.26 + I(Haut_cm_09.26^2),
+  data = df_filtered_orange
+)
+
+# Application du modèle : ajout du diamètre moyen et de la prédiction
+Data_Orange <- Data_Orange %>%
+  mutate(
+    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2,
+    Pred_D_moy_09.26 = predict(m_quad_orange, newdata = Data_Orange)
+  )
+
+# Ajout des prédictions dans le tableau des diamètres incohérents
+err_diam_orange <- err_diam_orange %>%
+  left_join(
+    Data_Orange %>%
+      select(Bague, Transect, D1_mm_09.26, D2_mm_09.26,
+             Pred_D_moy_09.26),
+    by = c("Bague", "Transect", "D1_mm_09.26", "D2_mm_09.26"),
+    suffix = c("", "_pred")
+  )
+
+
+# Remplacement du diamètre moyen par le diamètre le plus proche
+# de la prédiction
+err_diam_orange <- err_diam_orange %>%
+  mutate(
+    D_closest = ifelse(
+      abs(D1_mm_09.26 - Pred_D_moy_09.26) <=
+        abs(D2_mm_09.26 - Pred_D_moy_09.26),
+      D1_mm_09.26,
+      D2_mm_09.26
+    )
+  ) %>%
+  mutate(D_moy_09.26 = D_closest) %>%
+  select(-D_closest, -diff_pct_Diam, -diff_Diam)
+
+# On ajoute les lignes corrigées au tableau original
+Data_Orange <- Data_Orange %>%
+  anti_join(
+    err_diam_orange,
+    by = c("Bague", "Transect", "D1_mm_09.26", "D2_mm_09.26")
+  ) %>%
+  bind_rows(err_diam_orange)
+
+
 ```
 
 ## Merge Pink and Orange Data
@@ -275,8 +468,7 @@ We check if the diameter measurement are valid
 
 ## Captors data
 
-First, We import the data.
-For the TOMST captor, we need to redefine the separator.
+First, We import the data. For the TOMST captor, we need to redefine the separator.
 
 ```{r}
 # import Lascar data
