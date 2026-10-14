@@ -10,6 +10,8 @@ Here, all the libraries needed for our project
 ```{r}
 library(dplyr)
 library(tidyverse)
+library(stringr)
+library(sf)
 ```
 
 # Compiling data tables and managing duplicates
@@ -175,7 +177,10 @@ Growth_Orange$Type_bis = ifelse(startsWith(Growth_Orange$Carre, "TC"), "CONTROL"
 Growth_Orange = Growth_Orange[, -1] #removal of the column "Placette"
 
 ## Modifications of "Genetic" data 
-Genet_Orange$Type_bis = ifelse(startsWith(Genet_Orange$T, "TC"), "CONTROL", "TRANSECT") #Creation of a new column that clearly separates "control" and "transect" seedlings
+Genet_Orange$Type_bis = ifelse(startsWith(Genet_Orange$T, "TC"), "CONTROL", "TRANSECT")
+# Changing the format of the values in the "Placette" and "Piquet_ref" columns
+Genet_Orange <- Genet_Orange %>% mutate(Piquet_Ref = ifelse(str_starts(Piquet_Ref, "T"), Piquet_Ref, ifelse(str_starts(Piquet_Ref,"C[A-Za-z]"), paste("T",Piquet_Ref, sep = ""), paste(T,Piquet_Ref, sep = "")))) %>% mutate(Placette = ifelse(str_starts(Placette, "T"), Placette, ifelse(str_starts(Placette, "C[A-Za-z]"), paste("T", Placette, sep = ""), paste(T, Placette, sep = ""))))
+#Creation of a new column that clearly separates "control" and "transect" seedlings
 Genet_Orange = Genet_Orange %>% rename(Bague = Bague_O) #renaming a column
 Genet_Orange = Genet_Orange %>% rename(Commentaire_Genet_09.26 = Comm)
 
@@ -218,7 +223,8 @@ sum(is.na(Data_Orange$ER_09.26)) # two seedlings have NA for light
 
 ```
 
-Now, we check if there is no NA data for the orange. We built a data frame with all the seedlings to check in the field sheet.
+Now, we check if there is no NA data for the orange.
+We built a data frame with all the seedlings to check in the field sheet.
 
 ```{r}
 Missing_value_orange = Data_Orange[!complete.cases(Data_Orange[, -c(20:24)]),] # this is all the lines with missing value except for herbivory
@@ -261,7 +267,6 @@ print(Only_in_orange)
 Merged_Pink_Orange <- full_join(pink_data_clean, Data_Orange, by = common_columns)
 ```
 
-
 We check if the diameter measurement are valid
 
 ```{r}
@@ -270,14 +275,15 @@ We check if the diameter measurement are valid
 
 ## Captors data
 
-First, We import the data. For the TOMST captor, we need to redefine the separator.
+First, We import the data.
+For the TOMST captor, we need to redefine the separator.
 
 ```{r}
 # import Lascar data
-Lascar = read.table("Alldata_LASCARS.csv", header=T, sep=",", dec=".")
+Lascar = read.table("Captor_data/Alldata_LASCARS.csv", header=T, sep=",", dec=".")
 Lascar[49004,6]="T5_2_20" # correction d'une donnée mal écrite
 # import Tomst data
-TOMST = readLines("Alldata_TOMST.csv")
+TOMST = readLines("Captor_data/Alldata_TOMST.csv")
 TOMST = gsub('^"|"$', '', TOMST) # I need to correct the sep definition
 TOMST = gsub('""', '"', TOMST)
 TOMST = read.csv(text = TOMST,sep = ",",header = TRUE)
@@ -294,4 +300,109 @@ Tomst_mean = TOMST %>% group_by(serial_number,height) %>% summarise (mean(value)
 Lascar_mean = Lascar %>% group_by(id_capteur) %>% summarise (mean(celsius_c),mean(humidity_percent_rh), mean(dew_point_c))
 ```
 
-## 
+## Mapping of seedlings
+
+We extract the locations for the orange and pink seedlings.
+
+```{r}
+Local_Seedling <- Merged_Pink_Orange %>% select(c(Bague, Placette, Piquet_ref, Azimut, Dist_m))
+```
+
+We read the layer with the stake locations
+
+```{r}
+Geom_Stake <- st_read("Mapping/Previous_layers/Piquets_tous.gpkg")
+```
+
+We project the localisation of the seedlings thanks to the localisation of the stakes
+
+```{r}
+# We join the two dataframe to associate at the orange seedlings the localisation of their reference stake
+Local_Seedling <- left_join(Local_Seedling, as.data.frame(Geom_Stake) %>% rename(Piquet_ref = name), join_by (Piquet_ref))
+# We calculate the localisations of the seedlings thanks to trigonometric formula
+Local_Seedling <- Local_Seedling %>% mutate(angle = Azimut*pi/180) %>% mutate(X_plantule = Coord_X + sin(angle) * Dist_m) %>% mutate(Y_plantule = Coord_Y + cos(angle) * Dist_m) %>% mutate(Coord_X = X_plantule, Coord_Y = Y_plantule) %>% mutate(Coord_X = X_plantule, Coord_Y = Y_plantule) %>% filter(!is.na(X_plantule), !is.na(Y_plantule)) %>% select(c(- X_plantule, - Y_plantule, - angle))
+```
+
+We create the layers of seedlings localisations
+
+```{r}
+# We create the layers
+Geom_Seedling <- st_as_sf(Local_Seedling, coords = c("Coord_X","Coord_Y")) %>% select(-geom)
+
+# We choose their Coordinate Reference Systems (CRS)
+Geom_Seedling <- st_set_crs(Geom_Seedling, 2972)
+```
+
+We can export the layers
+
+```{r}
+# st_write(Geom_Seedling %>% filter(Bague >= 2000), "Mapping/Exported_layers/Orange_seeldlings.shp")
+# st_write(Geom_Seedling %>% filter(Bague < 2000), "Mapping/Exported_layers/Pink_seeldlings.shp")
+```
+
+## Mapping of sensors
+
+It's the same method as for seedlings
+
+```{r}
+Local_Sensor <- read.csv("Mapping/Capteurs_ARTEMIA.csv", sep = ";", dec =",")
+
+# We change the format of the values in the "Piquet_ref" column
+Local_Sensor <- Local_Sensor %>% mutate(Piquet_ref = paste(Transect, Piquet_ref, sep = ""))
+
+# We calculate the coordinates
+Local_Sensor <- Local_Sensor %>% left_join(as.data.frame(Geom_Stake) %>% rename(Piquet_ref = name)) %>% mutate(angle = Azimut*pi/180) %>% mutate(X_sensor = Coord_X + sin(angle) * Dist) %>% mutate(Y_sensor = Coord_Y + cos(angle) * Dist) %>% mutate(Coord_X = X_sensor, Coord_Y = Y_sensor) %>% filter(!is.na(X_sensor), !is.na(Y_sensor)) %>% select(c(-X_sensor, -Y_sensor, -angle))
+
+# We filter the two types of sensor and we creat their layer
+Geom_Sensor <- st_as_sf(Local_Sensor, coords = c("Coord_X", "Coord_Y")) %>% st_set_crs(2972)
+```
+
+We can export the layers
+
+```{r}
+# st_write(Geom_Sensor %>% filter(Capteur == "TMS4"), "Mapping/Exported_layers/TMS4.shp")
+# st_write(Geom_Sensor %>% filter(Capteur == "EL-USB-2"), "Mapping/Exported_layers/EL_USB_2.shp")
+```
+
+## Distance between seedlings and skid trails
+
+Read the skid trails layer
+
+```{r}
+Geom_Skid_Trail <- st_read("Mapping/previous_layers/pistes_debardage.gpkg")
+```
+
+calculate distances
+
+```{r}
+# We only keep the seedlings located in the transects, excluding those in the control plot, since it contains no skid trails
+Geom_Seedling_Transect <- Geom_Seedling %>% filter(Transect != "TC")
+
+# Both layers are in EPSG:2972, so we can compute seedling-to-skid-trail minimum distances
+Geom_Seedling_Transect <- Geom_Seedling_Transect %>% mutate(Dist_skid_trails = as.numeric(st_distance(Geom_Seedling_Transect, st_union(Geom_Skid_Trail))))
+```
+
+We add this variable to our data frame : Merged_Pink_Orange
+
+```{r}
+Merged_Pink_Orange <- left_join(Merged_Pink_Orange, st_drop_geometry(Geom_Seedling_Transect))
+```
+
+## Distance and ID of the nearest TMS4 sensor and the nearest EL-USB-2 sensor for each seedling
+
+```{r}
+# Both layers use EPSG:2972, so we can compute the minimum distances from each seedling to the nearest TMS4 and EL-USB-2 sensors
+Geom_Seedling <- Geom_Seedling %>% mutate(Dist_TMS4 = as.numeric(st_distance(Geom_Seedling, st_union(Geom_Sensor %>% filter(Capteur == 'TMS4'))))) %>% mutate(Dist_EL_USB_2 = as.numeric(st_distance(Geom_Seedling, st_union(Geom_Sensor %>% filter(Capteur == 'EL-USB-2')))))
+
+# We add the ID of the nearest sensor TMS4 and the nearest sensor EL-USB-2
+Geom_TMS4 <- Geom_Sensor %>% filter(Capteur == "TMS4")
+Geom_EL_USB_2 <- Geom_Sensor %>% filter(Capteur == "EL-USB-2")
+
+Geom_Seedling <- Geom_Seedling %>% mutate(ID_TMS4 = Geom_TMS4$Code_capteur[st_nearest_feature(., Geom_TMS4)]) %>% mutate(ID_EL_USB_2 = Geom_EL_USB_2$Code_capteur[st_nearest_feature(., Geom_EL_USB_2)])
+```
+
+We add these variables to our data frame : Merged_Pink_Orange
+
+```{r}
+Merged_Pink_Orange <- Merged_Pink_Orange %>% left_join(., st_drop_geometry(Geom_Seedling))
+```
