@@ -320,7 +320,8 @@ sum(is.na(Data_Orange$ER_09.26)) # two seedlings have NA for light
 
 ```
 
-Now, we check if there is no NA data for the orange. We built a data frame with all the seedlings to check in the field sheet.
+Now, we check if there is no NA data for the orange.
+We built a data frame with all the seedlings to check in the field sheet.
 
 ```{r}
 Missing_value_orange = Data_Orange[!complete.cases(Data_Orange[, -c(20:24)]),] # this is all the lines with missing value except for herbivory
@@ -468,7 +469,8 @@ We check if the diameter measurement are valid
 
 ## Captors data
 
-First, We import the data. For the TOMST captor, we need to redefine the separator.
+First, We import the data.
+For the TOMST captor, we need to redefine the separator.
 
 ```{r}
 # import Lascar data
@@ -528,8 +530,8 @@ Geom_Seedling <- st_set_crs(Geom_Seedling, 2972)
 We can export the layers
 
 ```{r}
-# st_write(Geom_Seedling %>% filter(Bague >= 2000), "Mapping/Exported_layers/Orange_seeldlings.shp")
-# st_write(Geom_Seedling %>% filter(Bague < 2000), "Mapping/Exported_layers/Pink_seeldlings.shp")
+#st_write(Geom_Seedling %>% filter(Bague >= 2000), "Mapping/Exported_layers/Orange_seeldlings.shp")
+#st_write(Geom_Seedling %>% filter(Bague < 2000), "Mapping/Exported_layers/Pink_seeldlings.shp")
 ```
 
 ## Mapping of sensors
@@ -552,8 +554,8 @@ Geom_Sensor <- st_as_sf(Local_Sensor, coords = c("Coord_X", "Coord_Y")) %>% st_s
 We can export the layers
 
 ```{r}
-# st_write(Geom_Sensor %>% filter(Capteur == "TMS4"), "Mapping/Exported_layers/TMS4.shp")
-# st_write(Geom_Sensor %>% filter(Capteur == "EL-USB-2"), "Mapping/Exported_layers/EL_USB_2.shp")
+#st_write(Geom_Sensor %>% filter(Capteur == "TMS4"), "Mapping/Exported_layers/TMS4.shp")
+#st_write(Geom_Sensor %>% filter(Capteur == "EL-USB-2"), "Mapping/Exported_layers/EL_USB_2.shp")
 ```
 
 ## Distance between seedlings and skid trails
@@ -597,4 +599,10 @@ We add these variables to our data frame : Merged_Pink_Orange
 
 ```{r}
 Merged_Pink_Orange <- Merged_Pink_Orange %>% left_join(., st_drop_geometry(Geom_Seedling))
+```
+
+## We can write the data frame 
+
+```{r}
+write.csv(Merged_Pink_Orange, "Exported_data/ARTEMIA_seedling_monitoring_ALLDATA_09_2026.csv")
 ```
