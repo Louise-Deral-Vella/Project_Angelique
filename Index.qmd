@@ -86,7 +86,7 @@ pink_data_clean = pink_data[,-c(1,68)]
 sum(is.na(pink_data_clean$ER_09.26))
 ```
 
-Now we check the problem of two columns of "state alive and death
+Inconsistency with "alive/dead" status of seedlings
 
 ```{r}
 # First change the "/" and "-" into NA
@@ -110,10 +110,10 @@ pink_data_clean$Etat_09.26.y  = ifelse(pink_data_clean$Etat_09.26.y ==""&pink_da
 pink_data_clean = pink_data_clean[,-66]
 ```
 
-Now we create a data frame with the seedlings having NA for the mesure of 09/2026 and the data.frame for the death/alive seedlings
+Now we create a data frame with the seedlings that have "NA" as diameter and height measure from 09/2026 and another data.frame for those that are listed in the state column as dead or alive
 
 ```{r}
-Missing_value_pink = pink_data_clean[!complete.cases(pink_data_clean[, -c(1:65,75:79)]),] # this is all the lines with missing value except for herbivory
+Missing_value_pink = pink_data_clean[!complete.cases(pink_data_clean[, -c(1:65,75:79)]),] # this is all the lines with missing values except for herbivory
 
 # We subset only for the alive seedlings
 Missing_value_pink_alive = subset(Missing_value_pink, Missing_value_pink$Etat_09.26.y=="V")
@@ -134,7 +134,7 @@ write_csv(not_alive_pink,"not_alive_pink.csv")
 
 ```
 
-Rename columns for association of data set
+Rename columns in preparation for data table compilation of "orange" and "pink" data sets
 
 ```{r}
 pink_data_clean = pink_data_clean %>% rename(Etat_09.26 = Etat_09.26.y)
@@ -145,31 +145,31 @@ herbivory (insect) detection of inconsistencies
 (modified directly on the data)
 
 ```{r}
-#On cherche les colones qui ont des incoherences d'herbivory
+# In search of inconsistencies in herbivory data
 df_checked_pink <- pink_data_clean %>%
   rowwise() %>%
   mutate(
-    # Compter les colonnes Herb_1:Herb_5 qui sont ni NA ni 0
+    # Counting the columns Herb_1:Herb_5 that have neither "NA" nor "0"
     n_herb_cols = sum(!is.na(c_across(Herb1_09.26:Herb5_09.26)) & c_across(Herb1_09.26:Herb5_09.26) != 0),
     
-    # Valeur attendue (N_herb plafonné à 5)
+    # Expected value (max:5 as the number of leaves counted for herbivory)
     attendu = ifelse(Nherb_09.26 > 5, 5, Nherb_09.26),
     
-    # Test de cohérence
+    # Coherence test
     erreur = n_herb_cols != attendu
   ) %>%
   ungroup()
 
-# Filtrer uniquement les incohérences
+# Filtering out the incoherent values
 df_checked_pink <- df_checked_pink %>% filter(erreur)
 
 ```
 
-Creation of a predicted diameter
+Calculation of a predictor value of diameter, an expected diameter based on height of each seedlings
 
 ```{r}
 
-# Détection des valeurs de diamètre trop différentes
+# In search for outliers
 err_diam_pink <- pink_data_clean %>%
   mutate(
     diff_pct_Diam = abs(D2_mm_09.26 - D1_mm_09.26) /
@@ -179,30 +179,30 @@ err_diam_pink <- pink_data_clean %>%
   filter(diff_pct_Diam >= 20 & diff_Diam >= 0.5)
 
 
-# Régression linéaire
+# Set up for linear regression: values are calculated
 df_filtered_rose <- pink_data_clean %>%
   mutate(
-    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2,
+    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2, # mean diameter 
     diff_pct_Diam = abs(D2_mm_09.26 - D1_mm_09.26) /
-      D_moy_09.26 * 100,
+      D_moy_09.26 * 100, # relative difference between the two diameter measurements
     diff_Diam = abs(D1_mm_09.26 - D2_mm_09.26)
-  ) %>%
+  ) %>% # absolute differences between the diameter measurements
   filter(diff_pct_Diam <= 20 & diff_Diam <= 0.5)
 
-# Ajustement du modèle de prédiction
+# Quadratic linear model is used to predict the average diameter based on height
 m_quad_rose <- lm(
   D_moy_09.26 ~ Haut_cm_09.26 + I(Haut_cm_09.26^2),
   data = df_filtered_rose
 )
 
-# Application du modèle : ajout du diamètre moyen et de la prédiction
+# Model application: additional values created for each seedlings 
 pink_data_clean <- pink_data_clean %>%
   mutate(
-    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2,
-    Pred_D_moy_09.26 = predict(m_quad_rose, newdata = pink_data_clean)
+    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2, # mean diameter
+    Pred_D_moy_09.26 = predict(m_quad_rose, newdata = pink_data_clean) # predicted diameter for corresponding height
   )
 
-# Ajout des prédictions dans le tableau des diamètres incohérents
+# Predicted values added to the data table with inconsistent data
 err_diam_pink <- err_diam_pink %>%
   left_join(
     pink_data_clean %>%
@@ -212,8 +212,7 @@ err_diam_pink <- err_diam_pink %>%
     suffix = c("", "_pred")
   )
 
-# Remplacement du diamètre moyen par le diamètre le plus proche
-# de la prédiction
+# Change of mean diameter for the diameter measurement closest to the predicted value
 err_diam_pink <- err_diam_pink %>%
   mutate(
     D_closest = ifelse(
@@ -226,7 +225,7 @@ err_diam_pink <- err_diam_pink %>%
   mutate(D_moy_09.26 = D_closest) %>%
   select(-D_closest, -diff_pct_Diam, -diff_Diam)
 
-# On ajoute les lignes corrigées au tableau original
+# We add the corrected rows to the source data table
 pink_data_clean <- pink_data_clean %>%
   anti_join(
     err_diam_pink,
@@ -241,7 +240,7 @@ pink_data_clean <- pink_data_clean %>%
 
 Importing data corresponding to new seedlings - "orange" data tables
 
-The data are in "raw_data_modified" file because the empty lines were delete directly in Excel.
+The data are in "raw_data_modified" file because the empty lines were deleted directly in Excel.
 
 ```{r}
 Browsing_Orange = read.csv("Raw_data/ Abrout_ORANGE.csv", header=T, sep=";", dec=",")
@@ -601,7 +600,7 @@ We add these variables to our data frame : Merged_Pink_Orange
 Merged_Pink_Orange <- Merged_Pink_Orange %>% left_join(., st_drop_geometry(Geom_Seedling))
 ```
 
-## We can write the data frame 
+## We can write the data frame
 
 ```{r}
 write.csv(Merged_Pink_Orange, "Exported_data/ARTEMIA_seedling_monitoring_ALLDATA_09_2026.csv")
