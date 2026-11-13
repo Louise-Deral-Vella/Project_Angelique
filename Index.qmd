@@ -320,8 +320,7 @@ sum(is.na(Data_Orange$ER_09.26)) # two seedlings have NA for light
 
 ```
 
-Now, we check if there is no NA data for the orange.
-We built a data frame with all the seedlings to check in the field sheet.
+Now, we check if there is no NA data for the orange. We built a data frame with all the seedlings to check in the field sheet.
 
 ```{r}
 Missing_value_orange = Data_Orange[!complete.cases(Data_Orange[, -c(20:24)]),] # this is all the lines with missing value except for herbivory
@@ -469,8 +468,7 @@ We check if the diameter measurement are valid
 
 ## Captors data
 
-First, We import the data.
-For the TOMST captor, we need to redefine the separator.
+First, We import the data. For the TOMST captor, we need to redefine the separator.
 
 ```{r}
 # import Lascar data
@@ -601,7 +599,7 @@ We add these variables to our data frame : Merged_Pink_Orange
 Merged_Pink_Orange <- Merged_Pink_Orange %>% left_join(., st_drop_geometry(Geom_Seedling))
 ```
 
-## We can write the data frame 
+## We can write the data frame
 
 ```{r}
 write.csv(Merged_Pink_Orange, "Exported_data/ARTEMIA_seedling_monitoring_ALLDATA_09_2026.csv")
