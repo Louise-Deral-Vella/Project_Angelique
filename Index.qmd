@@ -128,7 +128,7 @@ write_csv(Undead_pink,"undead_pink.csv")
 
 # Alive dead seedlings
 not_alive_pink <- pink_data_clean %>% mutate(not_alive = ifelse(Etat_09.26.y == "V", ifelse((Haut_cm_09.26 == 0 | is.na(Haut_cm_09.26) | Haut_cm_09.26 == "")&(D1_mm_09.26 == 0 | is.na(D1_mm_09.26) | D1_mm_09.26 == "" )&(
-D2_mm_09.26 == 0 | is.na(D2_mm_09.26) | D2_mm_09.26 == ""), T, F), F)) %>% filter(not_alive == T)
+  D2_mm_09.26 == 0 | is.na(D2_mm_09.26) | D2_mm_09.26 == ""), T, F), F)) %>% filter(not_alive == T)
 
 write_csv(not_alive_pink,"not_alive_pink.csv")
 
@@ -601,7 +601,7 @@ We add these variables to our data frame : Merged_Pink_Orange
 Merged_Pink_Orange <- Merged_Pink_Orange %>% left_join(., st_drop_geometry(Geom_Seedling))
 ```
 
-## We can write the data frame 
+## We can write the data frame
 
 ```{r}
 write.csv(Merged_Pink_Orange, "Exported_data/ARTEMIA_seedling_monitoring_ALLDATA_09_2026.csv")
