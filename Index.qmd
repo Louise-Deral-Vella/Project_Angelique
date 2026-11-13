@@ -12,6 +12,10 @@ library(dplyr)
 library(tidyverse)
 library(stringr)
 library(sf)
+library(ggplot2)
+library(FactoMineR) 
+library(factoextra)
+library(cowplot)
 ```
 
 # Compiling data tables and managing duplicates
@@ -86,7 +90,7 @@ pink_data_clean = pink_data[,-c(1,68)]
 sum(is.na(pink_data_clean$ER_09.26))
 ```
 
-Inconsistency with "alive/dead" status of seedlings
+Now we check the problem of two columns of "state alive and death
 
 ```{r}
 # First change the "/" and "-" into NA
@@ -110,10 +114,10 @@ pink_data_clean$Etat_09.26.y  = ifelse(pink_data_clean$Etat_09.26.y ==""&pink_da
 pink_data_clean = pink_data_clean[,-66]
 ```
 
-Now we create a data frame with the seedlings that have "NA" as diameter and height measure from 09/2026 and another data.frame for those that are listed in the state column as dead or alive
+Now we create a data frame with the seedlings having NA for the mesure of 09/2026 and the data.frame for the death/alive seedlings
 
 ```{r}
-Missing_value_pink = pink_data_clean[!complete.cases(pink_data_clean[, -c(1:65,75:79)]),] # this is all the lines with missing values except for herbivory
+Missing_value_pink = pink_data_clean[!complete.cases(pink_data_clean[, -c(1:65,75:79)]),] # this is all the lines with missing value except for herbivory
 
 # We subset only for the alive seedlings
 Missing_value_pink_alive = subset(Missing_value_pink, Missing_value_pink$Etat_09.26.y=="V")
@@ -134,7 +138,7 @@ write_csv(not_alive_pink,"not_alive_pink.csv")
 
 ```
 
-Rename columns in preparation for data table compilation of "orange" and "pink" data sets
+Rename columns for association of data set
 
 ```{r}
 pink_data_clean = pink_data_clean %>% rename(Etat_09.26 = Etat_09.26.y)
@@ -145,31 +149,31 @@ herbivory (insect) detection of inconsistencies
 (modified directly on the data)
 
 ```{r}
-# In search of inconsistencies in herbivory data
+#On cherche les colones qui ont des incoherences d'herbivory
 df_checked_pink <- pink_data_clean %>%
   rowwise() %>%
   mutate(
-    # Counting the columns Herb_1:Herb_5 that have neither "NA" nor "0"
+    # Compter les colonnes Herb_1:Herb_5 qui sont ni NA ni 0
     n_herb_cols = sum(!is.na(c_across(Herb1_09.26:Herb5_09.26)) & c_across(Herb1_09.26:Herb5_09.26) != 0),
     
-    # Expected value (max:5 as the number of leaves counted for herbivory)
+    # Valeur attendue (N_herb plafonné à 5)
     attendu = ifelse(Nherb_09.26 > 5, 5, Nherb_09.26),
     
-    # Coherence test
+    # Test de cohérence
     erreur = n_herb_cols != attendu
   ) %>%
   ungroup()
 
-# Filtering out the incoherent values
+# Filtrer uniquement les incohérences
 df_checked_pink <- df_checked_pink %>% filter(erreur)
 
 ```
 
-Calculation of a predictor value of diameter, an expected diameter based on height of each seedlings
+Creation of a predicted diameter
 
 ```{r}
 
-# In search for outliers
+# Détection des valeurs de diamètre trop différentes
 err_diam_pink <- pink_data_clean %>%
   mutate(
     diff_pct_Diam = abs(D2_mm_09.26 - D1_mm_09.26) /
@@ -179,30 +183,30 @@ err_diam_pink <- pink_data_clean %>%
   filter(diff_pct_Diam >= 20 & diff_Diam >= 0.5)
 
 
-# Set up for linear regression: values are calculated
+# Régression linéaire
 df_filtered_rose <- pink_data_clean %>%
   mutate(
-    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2, # mean diameter 
+    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2,
     diff_pct_Diam = abs(D2_mm_09.26 - D1_mm_09.26) /
-      D_moy_09.26 * 100, # relative difference between the two diameter measurements
+      D_moy_09.26 * 100,
     diff_Diam = abs(D1_mm_09.26 - D2_mm_09.26)
-  ) %>% # absolute differences between the diameter measurements
+  ) %>%
   filter(diff_pct_Diam <= 20 & diff_Diam <= 0.5)
 
-# Quadratic linear model is used to predict the average diameter based on height
+# Ajustement du modèle de prédiction
 m_quad_rose <- lm(
   D_moy_09.26 ~ Haut_cm_09.26 + I(Haut_cm_09.26^2),
   data = df_filtered_rose
 )
 
-# Model application: additional values created for each seedlings 
+# Application du modèle : ajout du diamètre moyen et de la prédiction
 pink_data_clean <- pink_data_clean %>%
   mutate(
-    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2, # mean diameter
-    Pred_D_moy_09.26 = predict(m_quad_rose, newdata = pink_data_clean) # predicted diameter for corresponding height
+    D_moy_09.26 = (D1_mm_09.26 + D2_mm_09.26) / 2,
+    Pred_D_moy_09.26 = predict(m_quad_rose, newdata = pink_data_clean)
   )
 
-# Predicted values added to the data table with inconsistent data
+# Ajout des prédictions dans le tableau des diamètres incohérents
 err_diam_pink <- err_diam_pink %>%
   left_join(
     pink_data_clean %>%
@@ -212,7 +216,8 @@ err_diam_pink <- err_diam_pink %>%
     suffix = c("", "_pred")
   )
 
-# Change of mean diameter for the diameter measurement closest to the predicted value
+# Remplacement du diamètre moyen par le diamètre le plus proche
+# de la prédiction
 err_diam_pink <- err_diam_pink %>%
   mutate(
     D_closest = ifelse(
@@ -225,7 +230,7 @@ err_diam_pink <- err_diam_pink %>%
   mutate(D_moy_09.26 = D_closest) %>%
   select(-D_closest, -diff_pct_Diam, -diff_Diam)
 
-# We add the corrected rows to the source data table
+# On ajoute les lignes corrigées au tableau original
 pink_data_clean <- pink_data_clean %>%
   anti_join(
     err_diam_pink,
@@ -240,7 +245,7 @@ pink_data_clean <- pink_data_clean %>%
 
 Importing data corresponding to new seedlings - "orange" data tables
 
-The data are in "raw_data_modified" file because the empty lines were deleted directly in Excel.
+The data are in "raw_data_modified" file because the empty lines were delete directly in Excel.
 
 ```{r}
 Browsing_Orange = read.csv("Raw_data/ Abrout_ORANGE.csv", header=T, sep=";", dec=",")
@@ -484,11 +489,11 @@ We summarize the data by calculating the mean of each variable for each captor f
 
 ```{r}
 # mean for TOMST 
-Tomst_mean = TOMST %>% group_by(serial_number,height) %>% summarise (mean(value)) 
+# Tomst_mean = TOMST %>% group_by(serial_number,height) %>% summarise (mean(value)) 
 # Nous avons donc la moyenne des valeurs relevés pour chaque capteur et chaque profondeur
 
 # mean for lascar 
-Lascar_mean = Lascar %>% group_by(id_capteur) %>% summarise (mean(celsius_c),mean(humidity_percent_rh), mean(dew_point_c))
+# Lascar_mean = Lascar %>% group_by(id_capteur) %>% summarise (mean(celsius_c),mean(humidity_percent_rh), mean(dew_point_c))
 ```
 
 ## Mapping of seedlings
@@ -602,4 +607,395 @@ Merged_Pink_Orange <- Merged_Pink_Orange %>% left_join(., st_drop_geometry(Geom_
 
 ```{r}
 write.csv(Merged_Pink_Orange, "Exported_data/ARTEMIA_seedling_monitoring_ALLDATA_09_2026.csv")
+```
+
+# Part 1 : Impact of the logging on the environment
+
+## Importing Data
+
+### Data
+
+```{r}
+TOMST <- read.csv("Captor_data/Alldata_TOMST.csv", header = T, sep = ";", dec = ",")
+LASCARS <- read.csv("Captor_data/Alldata_LASCARS.csv", header = T, sep = ",", dec = ".")
+Seedling <- Merged_Pink_Orange
+```
+
+### Geometry Layers
+
+```{r}
+geom_lascar <- st_read("Mapping/Exported_layers/EL_USB_2.shp")
+geom_tomst <- st_read("Mapping/Exported_layers/TMS4.shp")
+geom_stake <- st_read("Mapping/Previous_layers/Piquets_tous.gpkg")
+id_plot <- read.csv("Raw_data/polygone_plot.csv", sep = ",")
+```
+
+## Compute the center of each plot
+
+```{r}
+# long format for id_plot
+plot <- id_plot %>% pivot_longer(cols = starts_with("Stake"), names_to = "order", values_to = "id_stake")
+
+# join the geometry with the plot
+plot_stake <- left_join(plot, geom_stake, by = c("id_stake" = "name")) %>% st_as_sf()
+
+# creation of the polygons
+geom_plot <- plot_stake %>% arrange(Plot, order) %>% group_by(Plot) %>% summarise(do_union = FALSE) %>% st_cast("POLYGON") # create closed polygons
+
+plot(geom_plot)
+
+geom_plot <- st_set_crs(geom_plot, 2972)
+
+geom_plot_no_chablis <- geom_plot %>% filter(!(Plot %in% c("TCB3_chablis", "TCC3_chablis", "TCC4_chablis", "TCD4_chablis"))) 
+
+# st_write(geom_plot, "Layers/plot.gpkg")
+
+geom_center_plot <- st_centroid(geom_plot)
+
+plot(geom_center_plot)
+
+# st_write(geom_center_plot, "Layers/center_plot.gpkg")
+```
+
+## Data preparation
+
+### Canopy openess (Fisheye pictures)
+
+```{r}
+CO <- Seedling %>% dplyr::select(Transect, Placette, CO_mean_09.25) %>% filter(!is.na(CO_mean_09.25)) %>% group_by(Placette) %>% summarise(Transect = first(Transect),CO_mean_09.25 = mean(CO_mean_09.25)) %>% ungroup()
+
+CO <- CO %>% mutate(Placette = ifelse(Placette == "T4A0 ", "T4A0", Placette))
+CO <- CO %>% mutate(Placette = ifelse(Placette == "TAB1", "T4B1", Placette))
+CO <- CO %>% group_by(Placette) %>% summarise(CO_mean_09.25 = mean(CO_mean_09.25))
+
+CO <- CO %>% mutate(Placette = ifelse(
+  Placette == "TCB3", "TCB3_chablis", ifelse(
+    Placette == "TCC3", "TCC3_chablis", ifelse(
+      Placette == "TCC4", "TCC4_chablis", ifelse(
+        Placette == "TCD4", "TCD4_chablis", Placette))))
+)
+```
+
+We have one value of Canopy Openess (CO) for each plot.
+
+### TOMST
+
+```{r}
+# We add the column Transect
+TOMST <- TOMST %>% mutate(serial_number = as.character(serial_number)) %>% mutate(Transect = ifelse(endsWith(serial_number, "31")|endsWith(serial_number, "32")|endsWith(serial_number, "33")|endsWith(serial_number, "34")|endsWith(serial_number, "35"), "T1", ifelse(endsWith(serial_number, "36")|endsWith(serial_number, "37")|endsWith(serial_number, "48")|endsWith(serial_number, "49")|endsWith(serial_number, "50"), "T2", ifelse(endsWith(serial_number, "51")|endsWith(serial_number, "52")|endsWith(serial_number, "53")|endsWith(serial_number, "54")|endsWith(serial_number, "55"), "T3", ifelse(endsWith(serial_number, "56")|endsWith(serial_number, "57")|endsWith(serial_number, "58")|endsWith(serial_number, "59")|endsWith(serial_number, "60"), "T4", ifelse(endsWith(serial_number, "61")|endsWith(serial_number, "62")|endsWith(serial_number, "63")|endsWith(serial_number, "64")|endsWith(serial_number, "65"), "T5", ifelse(endsWith(serial_number, "66")|endsWith(serial_number, "67")|endsWith(serial_number, "68")|endsWith(serial_number, "69")|endsWith(serial_number, "70"), "T6", ifelse(endsWith(serial_number, "71")|endsWith(serial_number, "72")|endsWith(serial_number, "73")|endsWith(serial_number, "74")|endsWith(serial_number, "75"), "TC", "TC_chablis"))))))))
+
+# We separate the date and the time
+TOMST <- TOMST %>% separate(datetime_UTC, c("Date", "Time"), sep = " ") %>% mutate(Time = ifelse(is.na(Time), "0:00", Time)) %>% separate(Time, c("Hour", "Minutes"), convert = TRUE, remove = FALSE) %>% mutate(serial_number = as.character(serial_number))
+```
+
+#### we compute the max value for each day and each sensors
+
+```{r}
+max_tomst <- TOMST %>% group_by(serial_number, Date, height) %>% summarise(
+  max_value = max(value),
+  min_value = min(value)
+)
+
+max_tomst_Tair <- max_tomst %>% filter(height == "air 14 cm") %>% 
+  rename("max_T_air_tomst" = "max_value", "min_T_air_tomst" = "min_value") %>% 
+  dplyr::select(-height)
+
+max_tomst_Tsoil16 <- max_tomst %>% filter(height == "soil 16 cm") %>% 
+  rename("max_T_soil_16cm" = "max_value", "min_T_soil_16cm" = "min_value") %>% 
+  dplyr::select(-height)
+
+max_tomst_Tsoil26 <- max_tomst %>% filter(height == "soil 26 cm") %>% 
+  rename("max_T_soil_26cm" = "max_value", "min_T_soil_26cm" = "min_value") %>% 
+  dplyr::select(-height)
+
+max_tomst_Hsoil <- max_tomst %>% filter(height == "soil 18-33 cm") %>% 
+  rename("max_H_soil" = "max_value", "min_H_soil" = "min_value") %>% 
+  dplyr::select(-height)
+
+max_tomst <- left_join(max_tomst_Tsoil16, max_tomst_Tsoil26)
+max_tomst <- left_join(max_tomst, max_tomst_Hsoil)
+max_tomst <- left_join(max_tomst, max_tomst_Tair)
+
+mean_max_tomst <- max_tomst %>% group_by(serial_number) %>% summarise(
+  mean_max_T_air_tomst = mean(max_T_air_tomst),
+  mean_min_T_air_tomst = mean(min_T_air_tomst),
+  mean_max_T_soil_16cm = mean(max_T_soil_16cm),
+  mean_min_T_soil_16cm = mean(min_T_soil_16cm),
+  mean_max_T_soil_26cm = mean(max_T_soil_26cm),
+  mean_min_T_soil_26cm = mean(min_T_soil_26cm),
+  mean_max_H_soil = mean(max_H_soil),
+  mean_min_H_soil = mean(min_H_soil)
+)
+```
+
+### LASCAR
+
+```{r}
+# We fix the name of LASCAR sensor
+LASCARS <- LASCARS %>% mutate(id_capteur = ifelse(id_capteur == '"T5_2_20"', "T5_2_20", id_capteur))
+
+# We separate the date and the time
+LASCARS <- LASCARS %>% separate(time, c("Date", "Time"), sep = " ") %>% mutate(Time = ifelse(is.na(Time), "0:00", Time)) %>% separate(Time, c("Hour", "Minutes"), convert = TRUE, remove = FALSE)
+```
+
+#### we compute the max value for each day and each sensors
+
+```{r}
+max_lascar <- LASCARS %>% group_by(id_capteur, Date) %>% summarise(
+  max_T_air = max(celsius_c), 
+  max_H_air = max(humidity_percent_rh), 
+  min_T_air = min(celsius_c), 
+  min_H_air = min(humidity_percent_rh)
+)
+
+mean_max_lascar <- max_lascar %>% group_by(id_capteur) %>% summarise(
+  mean_max_T_air = mean(max_T_air), 
+  mean_min_T_air = mean(min_T_air), 
+  mean_max_H_air = mean(max_H_air), 
+  mean_min_H_air = mean(min_H_air)
+)
+```
+
+### We give to each plot his data
+
+#### First we find the intersection between our plot and our sensors to see which sensor are in which plot
+
+```{r}
+inter_lascar_plot <- st_intersection(geom_lascar, geom_plot)
+inter_tomst_plot <- st_intersection(geom_tomst, geom_plot)
+# st_write(inter_lascar_plot, "Layers/inter_lascar_plot.gpkg")
+# st_write(inter_tomst_plot, "Layers/inter_tomst_plot.gpkg")
+```
+
+#### Then, we compute the distance between each plot center and his closest sensor.
+
+TOMST
+
+```{r}
+geom_tomst_without_na <- geom_tomst %>% mutate(Cmplmnt = ifelse(is.na(Cmplmnt), "not chablis", Cmplmnt))
+
+geom_tomst_no_chablis <- geom_tomst_without_na %>% filter(Cmplmnt != "Chablis")
+
+geom_tomst_chablis <- geom_tomst_without_na %>% filter(Cmplmnt == "Chablis")
+
+geom_plot_tomst_no_chablis <- geom_plot_no_chablis %>% mutate(dist_tomst = as.numeric(st_distance(geom_center_plot %>% filter(!(Plot %in% c("TCB3_chablis", "TCC3_chablis", "TCC4_chablis", "TCD4_chablis"))), st_union(geom_tomst_no_chablis)))) %>% mutate(id_tomst = geom_tomst_no_chablis$Cd_cptr[st_nearest_feature(.,geom_tomst_no_chablis)])
+
+geom_plot_tomst_chablis <- geom_plot %>% filter(Plot %in% c("TCB3_chablis", "TCC3_chablis", "TCC4_chablis", "TCD4_chablis")) %>% 
+  mutate(dist_tomst = as.numeric(st_distance(geom_center_plot %>% filter(Plot %in% c("TCB3_chablis", "TCC3_chablis", "TCC4_chablis", "TCD4_chablis")), st_union(geom_tomst_chablis)))) %>% mutate(id_tomst = geom_tomst_chablis$Cd_cptr[st_nearest_feature(.,geom_tomst_chablis)])
+```
+
+LASCAR
+
+```{r}
+# We calculate the distance between the plot and the lascar without chablis on the TC
+geom_lascar_without_na <- geom_lascar %>% mutate(Cmplmnt = ifelse(is.na(Cmplmnt), "not chablis", Cmplmnt))
+
+geom_lascar_no_chablis <- geom_lascar_without_na %>% filter(Cmplmnt != "Chablis")
+
+geom_lascar_chablis <- geom_lascar_without_na %>% filter(Cmplmnt == "Chablis")
+
+
+geom_plot_no_chablis <- geom_plot %>% filter(!(Plot %in% c("TCB3_chablis", "TCC3_chablis", "TCC4_chablis", "TCD4_chablis"))) 
+
+geom_plot_lascar_no_chablis <- geom_plot_no_chablis %>% mutate(dist_lascar = as.numeric(st_distance(geom_center_plot %>% filter(!(Plot %in% c("TCB3_chablis", "TCC3_chablis", "TCC4_chablis", "TCD4_chablis"))), st_union(geom_lascar_no_chablis)))) %>% mutate(id_lascar = geom_lascar_no_chablis$Cd_cptr[st_nearest_feature(.,geom_lascar_no_chablis)])
+
+#Now, for the chablis
+geom_plot_lascar_chablis <- geom_plot %>% filter(Plot %in% c("TCB3_chablis", "TCC3_chablis", "TCC4_chablis", "TCD4_chablis")) %>% 
+  mutate(dist_lascar = as.numeric(st_distance(geom_center_plot %>% filter(Plot %in% c("TCB3_chablis", "TCC3_chablis", "TCC4_chablis", "TCD4_chablis")), st_union(geom_lascar_chablis)))) %>% mutate(id_lascar = geom_lascar_chablis$Cd_cptr[st_nearest_feature(.,geom_lascar_chablis)])
+```
+
+#### We can fusion the data
+
+```{r}
+fus_lascar <- bind_rows(geom_plot_lascar_no_chablis, geom_plot_lascar_chablis)
+fus_tomst <- bind_rows(geom_plot_tomst_no_chablis, geom_plot_tomst_chablis)
+fus_lascar <- st_drop_geometry(fus_lascar)
+fus_tomst <- st_drop_geometry(fus_tomst)
+
+plot_sensor_dist <- left_join(fus_tomst, fus_lascar)
+```
+
+#### We compute for each plot the mean of their sensors which intersect this plot
+
+TOMST
+
+```{r}
+inter_tomst_plot <- inter_tomst_plot %>% mutate(Cd_cptr = paste("966815", Cd_cptr, sep = ''))
+
+data_tomst_inter <- left_join(mean_max_tomst, inter_tomst_plot, join_by(serial_number == Cd_cptr)) %>% filter(!is.na(Plot))
+
+data_tomst_inter <- data_tomst_inter %>% dplyr::select(serial_number, mean_max_T_air_tomst, mean_min_T_air_tomst, mean_max_T_soil_16cm, mean_min_T_soil_16cm, mean_max_T_soil_26cm, mean_min_T_soil_26cm, mean_max_H_soil, mean_min_H_soil, Plot) %>% group_by(Plot) %>% summarise(
+  mean_max_T_air_tomst = mean(mean_max_T_air_tomst),
+  mean_min_T_air_tomst = mean(mean_min_T_air_tomst),
+  mean_max_T_soil_16cm = mean(mean_max_T_soil_16cm), 
+  mean_min_T_soil_16cm = mean(mean_min_T_soil_16cm), 
+  mean_max_T_soil_26cm = mean(mean_max_T_soil_26cm), 
+  mean_min_T_soil_26cm = mean(mean_min_T_soil_26cm),
+  mean_max_H_soil = mean(mean_max_H_soil), 
+  mean_min_H_soil = mean(mean_min_H_soil)
+)
+```
+
+LASCAR
+
+```{r}
+inter_lascar_plot <- inter_lascar_plot %>% mutate(Cd_cptr = gsub("-", "_", Cd_cptr))
+
+data_lascar_inter <- left_join(mean_max_lascar, inter_lascar_plot, join_by(id_capteur == Cd_cptr)) %>% filter(!is.na(Plot))
+
+data_lascar_inter <- data_lascar_inter %>% dplyr::select(id_capteur, mean_max_T_air, mean_min_T_air, mean_max_H_air, mean_min_H_air, Plot) %>% group_by(Plot) %>% summarise(
+  mean_max_T_air = mean(mean_max_T_air),
+  mean_min_T_air = mean(mean_min_T_air),
+  mean_max_H_air = mean(mean_max_H_air), 
+  mean_min_H_air = mean(mean_min_H_air)
+)
+```
+
+#### We give to each intersect plot the value of the sensors which intersect him
+
+```{r}
+# data according to distance
+plot_sensor_dist <- plot_sensor_dist %>% mutate(
+  id_lascar = gsub("-", "_", id_lascar), 
+  id_tomst = paste("966815", id_tomst, sep = ""))
+
+data_plot_dist <- left_join(plot_sensor_dist, mean_max_lascar, join_by(id_lascar == id_capteur))
+
+data_plot_dist <- left_join(data_plot_dist, mean_max_tomst, join_by(id_tomst == serial_number))
+
+## LASCAR
+# We replace the value with those in the intersection
+data_lascar <- data_plot_dist %>% mutate(
+  mean_max_T_air = ifelse(Plot %in% data_lascar_inter$Plot, data_lascar_inter$mean_max_T_air[which(data_lascar_inter$Plot == Plot)], mean_max_T_air), 
+  mean_min_T_air = ifelse(Plot %in% data_lascar_inter$Plot, data_lascar_inter$mean_min_T_air[which(data_lascar_inter$Plot == Plot)], mean_min_T_air),
+  mean_max_H_air = ifelse(Plot %in% data_lascar_inter$Plot, data_lascar_inter$mean_max_H_air[which(data_lascar_inter$Plot == Plot)], mean_max_H_air),
+  mean_min_H_air = ifelse(Plot %in% data_lascar_inter$Plot, data_lascar_inter$mean_min_H_air[which(data_lascar_inter$Plot == Plot)], mean_min_H_air),
+)
+
+## TOMST
+data_lascar_tomst <- data_lascar %>% mutate(
+  mean_max_T_air_tomst = ifelse(Plot %in% data_tomst_inter$Plot, data_tomst_inter$mean_max_T_air_tomst[which(data_tomst_inter$Plot == Plot)], mean_max_T_air_tomst),
+  mean_min_T_air_tomst = ifelse(Plot %in% data_tomst_inter$Plot, data_tomst_inter$mean_min_T_air_tomst[which(data_tomst_inter$Plot == Plot)], mean_min_T_air_tomst),
+  mean_max_T_soil_16cm = ifelse(Plot %in% data_tomst_inter$Plot, data_tomst_inter$mean_max_T_soil_16cm[which(data_tomst_inter$Plot == Plot)], mean_max_T_soil_16cm),
+  mean_min_T_soil_16cm = ifelse(Plot %in% data_tomst_inter$Plot, data_tomst_inter$mean_min_T_soil_16cm[which(data_tomst_inter$Plot == Plot)], mean_min_T_soil_16cm),
+  mean_max_T_soil_26cm = ifelse(Plot %in% data_tomst_inter$Plot, data_tomst_inter$mean_max_T_soil_26cm[which(data_tomst_inter$Plot == Plot)], mean_max_T_soil_26cm),
+  mean_min_T_soil_26cm = ifelse(Plot %in% data_tomst_inter$Plot, data_tomst_inter$mean_min_T_soil_26cm[which(data_tomst_inter$Plot == Plot)], mean_min_T_soil_26cm),
+  mean_max_H_soil = ifelse(Plot %in% data_tomst_inter$Plot, data_tomst_inter$mean_max_H_soil[which(data_tomst_inter$Plot == Plot)], mean_max_H_soil),
+  mean_min_H_soil = ifelse(Plot %in% data_tomst_inter$Plot, data_tomst_inter$mean_min_H_soil[which(data_tomst_inter$Plot == Plot)], mean_min_H_soil),
+)
+```
+
+### We fusion the data to do the PCA
+
+```{r}
+data <- data_lascar_tomst %>% dplyr::select(-dist_tomst, -dist_lascar, -id_tomst, -id_lascar) 
+
+data <- left_join(data, CO, join_by(Plot == Placette))
+
+data <- data %>% mutate(type = ifelse(
+  startsWith(Plot, "T1")|startsWith(Plot, "T2")|startsWith(Plot, "T3"), "EX_2024", 
+  ifelse(startsWith(Plot, "T4")|startsWith(Plot, "T5")|startsWith(Plot, "T6"), "EX_2020", 
+         ifelse(endsWith(Plot, "chablis"), "CONTROL_CHABLIS", "CONTROL"))
+))
+
+data <- data %>% column_to_rownames("Plot")
+```
+
+## PCA
+
+```{r}
+pca_plot <- prcomp(data %>% dplyr::select(-type), scale = TRUE)
+
+## individuals
+ind <- as.data.frame(get_pca_ind(pca_plot)$coord[,1:2])
+colnames(ind) <- c("PC1", "PC2")
+ind$type <- data$type
+
+## variables
+var <- data.frame(get_pca_var(pca_plot)$coord[, 1:2])
+colnames(var) <- c("PC1", "PC2")
+var$nom <- rownames(var)
+
+## percentage variance explain by axes
+pca_eig <- get_eig(pca_plot)
+eig <- pca_eig[1:2, 2]
+
+## colour
+niveaux <- levels(ind$type)
+cols <- setNames(c("forestgreen", "orange", "firebrick", "royalblue"), niveaux)
+
+
+## Plot PCA
+ggplot(ind, aes(x = PC1, y = PC2)) +
+  # confidence elipse
+  stat_ellipse(aes(colour = type, fill = type),
+               geom = "polygon", level = 0.95, alpha = 0.15) +
+  # Variables
+  geom_segment(data = var,
+               aes(x = 0, y = 0, xend = PC1, yend = PC2),
+               arrow = arrow(length = unit(0.25, "cm")),
+               colour = "grey20", inherit.aes = FALSE) +
+  geom_text(data = var, aes(x = PC1, y = PC2, label = nom),
+            colour = "grey20", vjust = -0.6, inherit.aes = FALSE) +
+  # plot individuals
+  geom_point(aes(colour = type, shape = type, size = 3)) +
+  scale_colour_manual(values = cols) +
+  scale_fill_manual(values = cols) +
+  # labels
+  labs(x = paste0("PC1 (", round(as.numeric(eig[1]), 1), " %)"),
+       y = paste0("PC2 (", round(as.numeric(eig[2]), 1), " %)"),
+       colour = "Traitement", fill = "Traitement", shape = "Traitement") +
+  
+  theme_bw() +
+  theme(panel.grid = element_blank())
+```
+
+## Boxplot
+
+### We add the data transect and type for each sensor
+
+TOMST
+
+```{r}
+data_env_tomst <- mean_max_tomst
+
+data_env_tomst <- data_env_tomst %>% mutate(serial_number = as.character(serial_number)) %>% mutate(Transect = ifelse(endsWith(serial_number, "31")|endsWith(serial_number, "32")|endsWith(serial_number, "33")|endsWith(serial_number, "34")|endsWith(serial_number, "35"), "T1", ifelse(endsWith(serial_number, "36")|endsWith(serial_number, "37")|endsWith(serial_number, "48")|endsWith(serial_number, "49")|endsWith(serial_number, "50"), "T2", ifelse(endsWith(serial_number, "51")|endsWith(serial_number, "52")|endsWith(serial_number, "53")|endsWith(serial_number, "54")|endsWith(serial_number, "55"), "T3", ifelse(endsWith(serial_number, "56")|endsWith(serial_number, "57")|endsWith(serial_number, "58")|endsWith(serial_number, "59")|endsWith(serial_number, "60"), "T4", ifelse(endsWith(serial_number, "61")|endsWith(serial_number, "62")|endsWith(serial_number, "63")|endsWith(serial_number, "64")|endsWith(serial_number, "65"), "T5", ifelse(endsWith(serial_number, "66")|endsWith(serial_number, "67")|endsWith(serial_number, "68")|endsWith(serial_number, "69")|endsWith(serial_number, "70"), "T6", ifelse(endsWith(serial_number, "71")|endsWith(serial_number, "72")|endsWith(serial_number, "73")|endsWith(serial_number, "74")|endsWith(serial_number, "75"), "TC", "TC_chablis"))))))))
+
+data_env_tomst <- data_env_tomst %>% mutate(type = ifelse(Transect == "T1" | Transect == "T2" | Transect == "T3" , "Ex_2024", ifelse(Transect == "T4" | Transect == "T5" | Transect == "T6", "Ex_2020", ifelse(endsWith(serial_number, "76") | endsWith(serial_number, "77") | endsWith(serial_number, "78") | endsWith(serial_number, "79") | endsWith(serial_number, "83"), "control_chablis","control"))))
+```
+
+LASCAR
+
+```{r}
+data_env_lascar <- mean_max_lascar
+
+data_env_lascar <- data_env_lascar %>% mutate(Transect = ifelse(startsWith(id_capteur, "T1"), "T1", ifelse(startsWith(id_capteur, "T2"), "T2", ifelse(startsWith(id_capteur, "T3"), "T3", ifelse(startsWith(id_capteur, "T4"), "T4", ifelse(startsWith(id_capteur, "T5"), "T5", ifelse(startsWith(id_capteur, "T6"), "T6", "TC")))))))
+
+data_env_lascar <- data_env_lascar %>% mutate(type = ifelse(Transect == "T1" | Transect == "T2" | Transect == "T3" , "Ex_2024", ifelse(Transect == "T4" | Transect == "T5" | Transect == "T6", "Ex_2020", ifelse(id_capteur == "TC_4_28" | id_capteur == "TC_5_29" | id_capteur == "TC_6_30", "control_chablis", "control"))))
+```
+
+CO
+
+```{r}
+CO <- CO %>% mutate(Transect = ifelse(startsWith(Placette, "T1"), "T1", ifelse(startsWith(Placette, "T2"), "T2", ifelse(startsWith(Placette, "T3"), "T3", ifelse(startsWith(Placette, "T4"), "T4", ifelse(startsWith(Placette, "T5"), "T5", ifelse(startsWith(Placette, "T6"), "T6", "TC")))))))
+
+CO <- CO %>% mutate(type = ifelse(Transect == "T1" | Transect == "T2" | Transect == "T3" , "Ex_2024", ifelse(Transect == "T4" | Transect == "T5" | Transect == "T6", "Ex_2020", ifelse(endsWith(Placette, "chablis"), "control_chablis", "control"))))
+```
+
+### Boxplot
+
+```{r}
+gg1 <- ggplot(data_env_lascar) + geom_boxplot(aes(x = type, y = mean_max_T_air, color = type))
+
+gg2 <- ggplot(data_env_tomst) + geom_boxplot(aes(x = type, y = mean_max_T_air_tomst, color = type))
+
+gg3 <- ggplot(data_env_lascar) + geom_boxplot(aes(x = type, y = mean_min_H_air, color = type))
+
+gg4 <- ggplot(data_env_tomst) + geom_boxplot(aes(x = type, y = mean_max_T_soil_16cm, color = type))
+
+gg5 <- ggplot(data_env_tomst) + geom_boxplot(aes(x = type, y = mean_max_H_soil, color = type))
+
+gg6 <- ggplot(CO) + geom_boxplot(aes(x = type, y = CO_mean_09.25, color = type))
+
+plot_grid(gg1, gg2, gg3, gg4, gg5, gg6, ncol = 2, nrow = 3)
 ```
