@@ -16,6 +16,13 @@ library(ggplot2)
 library(FactoMineR) 
 library(factoextra)
 library(cowplot)
+library(emmeans)
+library(gtsummary)
+library(emmeans)
+library(ggpubr)
+library(lme4)
+library(lmtest)
+library(rstatix)
 ```
 
 # Compiling data tables and managing duplicates
@@ -998,4 +1005,397 @@ gg5 <- ggplot(data_env_tomst) + geom_boxplot(aes(x = type, y = mean_max_H_soil, 
 gg6 <- ggplot(CO) + geom_boxplot(aes(x = type, y = CO_mean_09.25, color = type))
 
 plot_grid(gg1, gg2, gg3, gg4, gg5, gg6, ncol = 2, nrow = 3)
+```
+
+# Part 2 : Germination of new seedlings
+
+```{r}
+DATA = read.csv("ARTEMIA_seedling_monitoring_ALLDATA_09_2026.csv", header=T, sep=",", dec=".") # import all the data we have treated
+
+# File with the characteristics of the plot
+Plot_char = read.csv("charachteristics_plot.csv", header=T, sep=",", dec=".")
+
+# We will work only on the new seedlings that have appeared between march and september 2026
+Natality_analysis = subset(DATA, DATA$Bague >= 2000)
+Natality_analysis = DATA_orange %>% count(Placette)
+Natality_analysis = Natality_analysis[-c(46,47), ] # delete TZ
+Natality_analysis$Logging = Plot_char$type[match(Natality_analysis$Placette,Plot_char$Placette)]
+
+Natality_analysis$n[is.na(Natality_analysis$n)] =0
+```
+
+Now we can explore the data with plot
+
+```{r}
+hist(Natality_analysis$n,breaks = 15) # it is Poisson law
+ggplot(Natality_analysis, aes(x = factor(Logging),y=n)) + geom_boxplot() 
+```
+
+## GLM poisson (processus de comptage)
+
+Application condition to the glm poisson
+
+- No surdespersion : I have a calcul to ckeck surdispersion
+
+- Independance of the DATA (here yes, it is 1 value for 1 placette, no répétition)
+
+- Our data follow a poisson distribution
+
+We do the model
+
+```{r}
+model_poisson = glm(n~Logging,family="poisson", data=Natality_analysis)
+```
+
+We check if the data really **follow a poisson distribution**
+
+```{r}
+# To obtain the lambda parameter 
+mean(Natality_analysis$n) #  8.673469
+
+# 
+set.seed(1234) # allow to simulate count
+theoretic_count <-rpois(49,8.673469) # 49 = number of observation and 8.6 is our lambda parameter
+
+# put the theoric counting in a data frame
+tc_df <-data.frame(theoretic_count)
+
+# we plot together our data and the simulate data with the poisson law of lamba 8.6
+library(ggplot2)
+ggplot(Natality_analysis,aes(n))+
+  geom_bar(fill="#1E90FF")+
+  geom_bar(data=tc_df, aes(theoretic_count,fill="#1E90FF", alpha=0.5))+
+  theme_classic()+
+  theme(legend.position="none")
+```
+
+It seems that our data do not follow a poisson law.
+
+We check for surdispersion
+
+```{r}
+summary(model_poisson)
+model_poisson |> 
+  performance::check_overdispersion()
+```
+
+We can observe the dispersion ration : residual déviance (252.33) / DDL (41) = 6.846
+
+It is really superior to 0, there is surdispersion (p-value inferior to 0.05)
+
+Therefore, we chose to use a **negative binomiale distribution** (better than quasi-poisson model pour lesquels nous ne savons pas évaluer la correction de la surdispersion).
+
+Package MASS
+
+## GLM negative binomial 
+
+```{r}
+model_negbin_0 = MASS::glm.nb( n ~ 1, data = Natality_analysis) # nul model AIC: 318.24 and  residual deviance = 55.087
+
+model_negbin_Logged = MASS::glm.nb( n ~ Logging, data = Natality_analysis) # we had the variable logging
+summary(model_negbin_Logged)# AIC: 303.99 and Residual deviance: 54.782
+```
+
+```{r}
+model_negbin_Logged |>
+  guideR::observed_vs_theoretical()
+model_negbin_Logged |>
+  performance::check_predictions(type = "discrete_both")
+```
+
+We see that our data follow the negative binomial
+
+```{r}
+model_negbin_Logged |> 
+  performance::check_overdispersion()
+```
+
+No overdispersion
+
+We test if the variable explain significantly the number of seedlings per 10m2
+
+```{r}
+anova(model_negbin_Logged) # the type significaly explain the differences of new number of seedlings per plot
+```
+
+We can now test per pairs with emmeans
+
+```{r}
+emm = emmeans(model_negbin_Logged,"Logging")
+summary(emm)
+pairs = (pairs(emm))
+summary(pairs)
+pairs = as.data.frame(pairs) 
+```
+
+Now we can represent our data
+
+```{r}
+
+# Transforme the results of emmeans in table
+res = as.data.frame(pairs)
+res = res %>% filter(p.value < 0.05)
+res$group1 = str_split_fixed(res$contrast, " - ", 2)[, 1]
+res$group2 = str_split_fixed(res$contrast, " - ", 2)[, 2]
+
+res$label = paste0("\np = ", format.pval(res$p.value, digits = 2))
+
+# For the graphic
+maximum = max(Natality_analysis$n, na.rm = TRUE)
+pas = max(1, maximum * 0.12)
+res$y.position = maximum + pas *
+  seq_len(nrow(res))
+
+# Now add to the graphic
+
+ggplot(Natality_analysis, aes(Logging, n, fill = Logging)) + geom_boxplot(outlier.shape = NA) + geom_jitter(width = 0.15, alpha = 0.7) +
+  stat_pvalue_manual(res,label = "label",xmin = "group1", xmax = "group2",y.position = "y.position",tip.length = 0.01,inherit.aes = FALSE) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.25))) +
+  labs( title = "Boxplot of the number of new seedlings per 10m2 according to logging", y = "Number of new seedlings/10m2", x = "Logging", fill = "Traitement") +theme_light() +theme( plot.title = element_text(colour = "black",face = "bold"))
+
+
+```
+
+## Study the characteristics of the new individuals
+
+```{r}
+New_character = select(DATA_orange,Placette,Bague,Folmax_09.26,D_moy_09.26,N_feuil_09.26,Haut_cm_09.26) # selection of the variable of interest
+
+New_character = subset(New_character, New_character$Placette !="TCZ4")
+New_character = subset(New_character, New_character$Placette !="TCZ3") # we are not considering the genetic control
+
+# Add the logged caracteristic of each plot
+New_character$Logging = Natality_analysis$Logging[match (New_character$Placette,Natality_analysis$Placette)] 
+
+New_character$Type = ifelse(New_character$Logging == "no logging"|New_character$Logging == "natural opening", "no logging",New_character$Logging)
+```
+
+We will explore by plot :
+
+```{r}
+boxplot(New_character$D_moy_09.26~New_character$Logging) # seems to be bigger for exploited area
+boxplot(New_character$Haut_cm_09.26~New_character$Logging)# not a lot of difference
+boxplot(New_character$N_feuil_09.26~New_character$Logging) # more leaf for 2024
+boxplot(New_character$Folmax_09.26~New_character$Logging) # almost only 1 foliole max
+ggplot(New_character, aes(x=D_moy_09.26, y=Haut_cm_09.26, color=Type)) + geom_point()+geom_smooth(method = "glm")
+
+```
+
+Now starting the models
+
+### Diameter
+
+```{r}
+new_diameter = lm(D_moy_09.26~Logging, data=New_character)
+shapiro.test(new_diameter$residuals) # not normal
+bptest(new_diameter) # not homocedasticity
+dwtest(new_diameter) # independant
+plot(new_diameter)
+
+# We did a Krustal-Wallis test
+krustal_diameter= kruskal.test(D_moy_09.26 ~ Logging, data  = New_character) # significant difference
+
+# Then test post hoc
+wilcox_test(New_character,D_moy_09.26~Logging, paired = F, p.adjust.method = "holm")
+
+# Graphique representation (do not keep for the report)
+ggplot(New_character, aes(x = factor(Logging), y = D_moy_09.26,)) +
+  geom_boxplot(fill="lightblue", outliers=F) +
+  scale_fill_viridis_d() +
+  labs(title = "Diameter of new seedlings according to the logging condition",x = "Logging condition", y = "Diameter (mm)", subtitle = "Kruskal-Wallis test , p-value = 1.247e-15") + theme(plot.title = element_text(colour = "black",face = "bold"), plot.subtitle=element_text(face="italic"))+
+  theme_minimal()
+
+```
+
+Information about non-parametric test :
+
+**Kruskal-Wallis** : non-parametric test (residuals do not need to follow a normal law). But the data need to be ordinal (which is the case with logging variable) and independent.
+
+Here we study the rank (not the mean).
+
+Question of research : Does it exist a difference for the central trend of the 4 different samples study.
+
+H0 : The study variable (diameter or height) is the same between all the groups, there is no difference in the central trend.
+
+H1 : At least one group present systematically higher or lower value than the other groups for the variable study. Therefore, it's distribution varies from the one of the other.
+
+If there is no difference between groups, the mean value of rank will be similar for all the groups.
+
+**Test post-hoc** : Pairwise Wilcoxon Rank Sum Tests : allow to compare between group levels with the correction for multiple testing.
+
+### Height
+
+```{r}
+new_height = lm(Haut_cm_09.26~Logging, data=New_character)
+shapiro.test(new_height$residuals) # not normal
+bptest(new_height) # not homocedasticity
+dwtest(new_height) # independant
+plot(new_height)
+
+# We need to do a non parametric test
+kruskal.test(Haut_cm_09.26 ~ Logging, data  = New_character) # significant difference 
+
+# Then post-hoc test
+
+# Test par paires avec détails
+wilcox_test(New_character,Haut_cm_09.26~Logging, paired = F, p.adjust.method = "holm")
+pairwise.wilcox.test(New_character$Haut_cm_09.26, New_character$Logging, paired = F)
+
+# Graphic 
+ggplot(New_character, aes(x = factor(Logging), y = Haut_cm_09.26,)) +
+  geom_boxplot(fill="lightblue", outliers=F) + # we do not represent outliers for a better understanding of the graphic
+  scale_fill_viridis_d() +
+  labs(title = "Height of new seedlings according to the condition of logging",x = "Logging condition", y = "Height (cm)") +
+  theme_minimal()
+```
+
+# Analyse the mortality of the seedlings
+
+First selected the variable and creat variable for seedling densité par placette and pourcentage of herbivorie per seedlings
+
+```{r}
+# Prepare the data set 
+DATA_mortality = subset(DATA, DATA$Bague<2000) # take only pink
+
+DATA_mortality = select(DATA_mortality,Transect,Placette,Type,Bague,Piquet_ref,Azimut,Dist_m,Etat_09.25,Etat_09.26,Folmax_09.25,Folmax_03.26,N_feuil_09.25,N_herb_09.25,Herb_1_09.25,Herb_2_09.25,Herb_3_09.25,Herb_4_09.25,Herb_5_09.25,N_feuil_03.26,N_herb_03.26,Herb_1_03.26,Herb_2_03.26,Herb_3_03.26,Herb_4_03.26,Herb_5_03.26, Dist_skid_trails,D_moy_09.25,D_moy_03.26) # select the variable
+
+# Take out the control genetic
+DATA_mortality = subset(DATA_mortality, DATA_mortality$Type !="CONTROL_GENET")
+
+# Create the variable of density per 10m2 (chose the number of seedlings in 09.2025)
+Density_seedlings = DATA_mortality %>% subset(Etat_09.25 =="V") %>%count(Placette)
+
+DATA_mortality$Density= Density_seedlings$n[match(DATA_mortality$Placette, Density_seedlings$Placette)]
+
+# Creat 1 colonne for foliole max 
+DATA_mortality$Folmax = ifelse(is.na(DATA_mortality$Folmax_09.25), DATA_mortality$Folmax_03.26, DATA_mortality$Folmax_09.25)
+
+# Create the variable of herbivory when we see the plant for the first time
+
+DATA_mortality$N_feuil = ifelse(is.na(DATA_mortality$N_feuil_09.25), DATA_mortality$N_feuil_03.26, DATA_mortality$N_feuil_09.25)
+
+DATA_mortality$N_herb = ifelse(is.na(DATA_mortality$N_herb_09.25), DATA_mortality$N_herb_03.26, DATA_mortality$N_herb_09.25)
+
+DATA_mortality$Herb_1 = ifelse(is.na(DATA_mortality$Herb_1_09.25), DATA_mortality$Herb_1_03.26, DATA_mortality$Herb_1_09.25)
+
+DATA_mortality$Herb_2 = ifelse(is.na(DATA_mortality$Herb_2_09.25), DATA_mortality$Herb_2_03.26, DATA_mortality$Herb_2_09.25)
+
+DATA_mortality$Herb_3 = ifelse(is.na(DATA_mortality$Herb_3_09.25), DATA_mortality$Herb_3_03.26, DATA_mortality$Herb_3_09.25)
+
+DATA_mortality$Herb_4 = ifelse(is.na(DATA_mortality$Herb_4_09.25), DATA_mortality$Herb_4_03.26, DATA_mortality$Herb_4_09.25)
+
+DATA_mortality$Herb_5 = ifelse(is.na(DATA_mortality$Herb_5_09.25), DATA_mortality$Herb_5_03.26, DATA_mortality$Herb_5_09.25)
+
+# Mean of the herbovie on the leaf eaten
+DATA_mortality$Herb_mean = rowMeans(DATA_mortality[,c(31:35)],na.rm=T)
+
+DATA_mortality$Herb_mean[DATA_mortality$Herb_mean=="NaN"]=0
+DATA_mortality$Herb_mean =  DATA_mortality$Herb_mean / 10 # to have frequencies
+
+DATA_mortality$Herb_plant = (DATA_mortality$Herb_mean * DATA_mortality$N_herb) / DATA_mortality$N_feuil
+
+# We can select the variables
+DATA_mortality_final = select(DATA_mortality,Placette,Type,Bague,Piquet_ref,Azimut,Dist_m,Etat_09.26,Folmax,Density,Herb_plant, Dist_skid_trails) # select the variable
+
+# We add the logged variable
+DATA_mortality_final$Logging = Natality_analysis$Logging[match(DATA_mortality_final$Placette, Natality_analysis$Placette)]
+
+# We transform V into 1 en Morte into 0
+DATA_mortality_final$Etat = ifelse(DATA_mortality_final$Etat_09.26=="V",1,0)
+
+# Define the number of leaflet max as character
+DATA_mortality_final$Folmax = as.character(DATA_mortality_final$Folmax)
+
+# We add the diameter 
+DATA_mortality_final$Diameter = ifelse(is.na(DATA_mortality$D_moy_09.25),DATA_mortality$D_moy_03.26, DATA_mortality$D_moy_09.25)
+
+# Select 
+DATA_mortality_final = select(DATA_mortality_final,Placette,Type,Bague,Etat,Folmax,Density,Herb_plant,Logging, Diameter)
+
+DATA_mortality_final = na.omit(DATA_mortality_final)
+
+```
+
+Now we can creat our model
+
+```{r}
+nul_model_mortality = glmer(Etat ~1 + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
+summary(nul_model_mortality) # 2381.7 et deviance = 2377.7
+
+model1_mortality = glmer(Etat~ Logging + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
+summary(model1_mortality)# 2358.6  et deviance = 2348.6
+Anova(model1_mortality) # Logging is significant
+
+model2_mortality = glmer(Etat~ Logging + Density + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
+summary(model2_mortality) # AIC= 2360.6  and deviance = 2348.6
+Anova(model2_mortality, type = 2) # density is not significant
+
+model3_mortality = glmer(Etat~ Logging + Herb_plant + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
+summary(model3_mortality) # AIC : 2360.0 and deviance : 2348.0 
+Anova(model3_mortality, type = 2) # Herb_plant is significant
+
+model3_mortality_bis = glmer(Etat~ Logging + Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
+summary(model3_mortality_bis) # AIC : 2277.7 and deviance : 2265.7 
+Anova(model3_mortality_bis, type = 2) # Diameter is highly significant
+
+model4_mortality = glmer(Etat~ Logging * Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
+summary(model4_mortality) # AIC :  2278.9    and deviance : 2260.9
+Anova(model4_mortality, type = 2) # The interaction is not significant
+
+model5_mortality = glmer(Etat~ Logging + Herb_plant + Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
+summary(model5_mortality) # AIC :   2279.7     and deviance :  2265.7 (we can not use the number of leaflet because it is to unbalanced)
+Anova(model5_mortality, type = 2)
+
+
+```
+
+Conclusion : herbivory and density are not significant.
+
+The best model is with diameter and logging, without interaction.
+
+Best model
+
+```{r}
+model_mortality = glmer(Etat~ Logging + Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
+summary(model3_mortality_bis) # AIC : 2277.7 and deviance : 2265.7 
+Anova(model3_mortality_bis, type = 2) # Diameter is highly significant
+```
+
+We do emmeans test
+
+```{r}
+emmeans(model_mortality, pairwise ~  Logging, type = "response",adjust = "tukey", mode="only")
+```
+
+Graphics mortality according to the diameter
+
+```{r}
+ggplot(DATA_mortality_final, aes(x = Diameter, y = Etat)) + geom_point(alpha=1/2, size =1) +
+  stat_smooth(method = "glm", method.args = list(family=binomial), se = TRUE) + xlab("Diameter") +
+  ylab("Probability of survival") +
+  ggtitle("Probability of survivial of  D. guyanensis seedlings according to diameter")+theme_minimal() +   theme(plot.title = element_text(colour = "black", face = "bold")) + annotate("text",x=7,y=0.75, label = "Chisq = 56.184,p-value = 6.599e-14",)
+```
+
+Graphic of the probability of survival according to the logged parameter
+
+```{r}
+em_mortality = emmeans(model_mortality, pairwise ~  Logging, type = "response",adjust = "tukey", mode="only")
+em_mortality = as.data.frame(em_mortality$emmeans)
+
+p19 = ggplot(em_mortality, aes(x = Logging, y = prob)) +
+  geom_point(position = position_dodge(width = 0.3), size = 3) +
+  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), 
+                position = position_dodge(width = 0.3), 
+                width = 0.2) +
+  labs(
+    title = "Probability of survival of D. guanensis seedlings according to logging",
+    subtitle = "Values corresponding to the estimated marginal mean probabilities by emmeans function",
+    x = "Condition of logging",
+    y = "Probability of survival"
+  ) +
+  theme_minimal()+
+  theme(plot.title = element_text(colour = "black", face = "bold"))+
+  theme(plot.subtitle = element_text(colour = "black", face = "italic"))
+
+p19
 ```
