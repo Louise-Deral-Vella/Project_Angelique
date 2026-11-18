@@ -1087,7 +1087,7 @@ Therefore, we chose to use a **negative binomiale distribution** (better than qu
 
 Package MASS
 
-## GLM negative binomial 
+## GLM negative binomial
 
 ```{r}
 model_negbin_0 = MASS::glm.nb( n ~ 1, data = Natality_analysis) # nul model AIC: 318.24 and  residual deviance = 55.087
@@ -1122,7 +1122,7 @@ We can now test per pairs with emmeans
 
 ```{r}
 emm = emmeans(model_negbin_Logged,"Logging")
-summary(emm)
+summary(emm, type ="response")
 pairs = (pairs(emm))
 summary(pairs)
 pairs = as.data.frame(pairs) 
@@ -1301,7 +1301,7 @@ DATA_mortality_final = select(DATA_mortality,Placette,Type,Bague,Piquet_ref,Azim
 DATA_mortality_final$Logging = Natality_analysis$Logging[match(DATA_mortality_final$Placette, Natality_analysis$Placette)]
 
 # We transform V into 1 en Morte into 0
-DATA_mortality_final$Etat = ifelse(DATA_mortality_final$Etat_09.26=="V",1,0)
+DATA_mortality_final$Etat = ifelse(DATA_mortality_final$Etat_09.26=="V",0,1)
 
 # Define the number of leaflet max as character
 DATA_mortality_final$Folmax = as.character(DATA_mortality_final$Folmax)
@@ -1320,31 +1320,31 @@ Now we can creat our model
 
 ```{r}
 nul_model_mortality = glmer(Etat ~1 + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(nul_model_mortality) # 2381.7 et deviance = 2377.7
+summary(nul_model_mortality) #  2274.2 et deviance = 2270.2
 
 model1_mortality = glmer(Etat~ Logging + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model1_mortality)# 2358.6  et deviance = 2348.6
+summary(model1_mortality)# 2251.7  et deviance = 2241.7
 Anova(model1_mortality) # Logging is significant
 
 model2_mortality = glmer(Etat~ Logging + Density + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model2_mortality) # AIC= 2360.6  and deviance = 2348.6
+summary(model2_mortality) # AIC=  2253.7  and deviance = 2241.7
 Anova(model2_mortality, type = 2) # density is not significant
 
 model3_mortality = glmer(Etat~ Logging + Herb_plant + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model3_mortality) # AIC : 2360.0 and deviance : 2348.0 
+summary(model3_mortality) # AIC : 2240.5 and deviance : 2228.5 
 Anova(model3_mortality, type = 2) # Herb_plant is significant
 
 model3_mortality_bis = glmer(Etat~ Logging + Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model3_mortality_bis) # AIC : 2277.7 and deviance : 2265.7 
+summary(model3_mortality_bis) # AIC :  2182.6  and deviance : 2170.6 
 Anova(model3_mortality_bis, type = 2) # Diameter is highly significant
 
 model4_mortality = glmer(Etat~ Logging * Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model4_mortality) # AIC :  2278.9    and deviance : 2260.9
+summary(model4_mortality) # AIC :   2183.2     and deviance : 2165.2
 Anova(model4_mortality, type = 2) # The interaction is not significant
 
 model5_mortality = glmer(Etat~ Logging + Herb_plant + Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model5_mortality) # AIC :   2279.7     and deviance :  2265.7 (we can not use the number of leaflet because it is to unbalanced)
-Anova(model5_mortality, type = 2)
+summary(model5_mortality) # AIC :   2184.4    and deviance :  2170.4 (we can not use the number of leaflet because it is to unbalanced)
+Anova(model5_mortality, type = 2) # herbivory is not significant
 
 
 ```
@@ -1398,4 +1398,62 @@ p19 = ggplot(em_mortality, aes(x = Logging, y = prob)) +
   theme(plot.subtitle = element_text(colour = "black", face = "italic"))
 
 p19
+```
+
+# Final model : Net increased in population density
+
+Here, net increased in population density per plot with the results of the model
+
+```{r}
+Mean_density = DATA_mortality_final[, c(6,8)] %>% group_by(Logging) %>% summarise(mean(Density))
+
+pop_increas= data.frame(
+  Treatment = c("Control", "Control_chablis", "EX2020", "EX2024"),
+  Mortality_prob = c(0.3002, 0.2851, 0.2560, 0.0964), # mean mortality rate according per plot per modalities of logging according our previous model
+  New_seedlings = c(5.75, 8.00, 6.82,30 ), # mean number of new seedlings per plot per modalities of logging according to our previous model 
+  Initial_pop = c(29.49724, 47.71831, 48.87957,79.12023)) # mean number of seedlings per plot per modalities of logging
+pop_increas$Net_increas = pop_increas$New_seedlings - (pop_increas$Mortality_prob*pop_increas$Initial_pop)
+
+plot(pop_increas$Net_increas)
+```
+
+Here, net population increased with the raw data
+
+```{r}
+pop_increase_raw = DATA_mortality_final[, c(1,4,8)] %>% group_by(Placette,Logging) %>% summarise(dead = sum(Etat))
+pop_increase_raw$New_seedlings = Natality_analysis$n[match(Natality_analysis$Placette,pop_increase_raw$Placette)]
+pop_increase_raw$New_seedlings = pop_increase_raw$New_seedlings *2
+pop_increase_raw$Net_increase = pop_increase_raw$New_seedlings - pop_increase_raw$dead
+
+boxplot(pop_increase_raw$Net_increase~pop_increase_raw$Logging)
+
+# Test 
+test_net_increase = lm(pop_increase_raw$Net_increase~pop_increase_raw$Logging)
+shapiro.test(test_net_increase$residuals) # not normal
+bptest(test_net_increase) # not homocedasticity
+dwtest(test_net_increase)# independant
+hist(pop_increase_raw$Net_increase)
+plot(test_net_increase) # the point 4 influence a lot the model ... 
+
+# We redo the model without point 4 
+pop_increase_raw_bis = pop_increase_raw[-4,] # put out the point 4
+pop_increase_raw_bis$Logging_bis = ifelse(pop_increase_raw_bis$Logging=="CONTROL_CHABLIS","CONTROL",pop_increase_raw_bis$Logging)
+test_net_increase_bis= lm(pop_increase_raw_bis$Net_increase~pop_increase_raw_bis$Logging)
+shapiro.test(test_net_increase_bis$residuals) # normal
+bptest(test_net_increase_bis) # not homocedasticity
+dwtest(test_net_increase_bis)# independant
+plot(test_net_increase) 
+
+boxplot(pop_increase_raw_bis$Net_increase~pop_increase_raw_bis$Logging)
+
+# We can do a ANOVA with Welsh correction 
+test_net_increase_bis = oneway.test(pop_increase_raw_bis$Net_increase~pop_increase_raw_bis$Logging_bis, var.equal = F)
+test_net_increase_bis # p-value = 0.03369
+pairwise.t.test(pop_increase_raw_bis$Net_increase,pop_increase_raw_bis$Logging_bis,pool.sd=F) # mean significatly higher for ex2024
+
+# Now add to the graphic
+
+ggplot(pop_increase_raw_bis, aes(Logging_bis, Net_increase, fill = Logging_bis)) + geom_boxplot(outlier.shape = NA) + geom_jitter(width = 0.15, alpha = 0.7) +
+  labs( title = "Boxplot of the net augmentation of the population density", y = "Net increase of the population", x = "Logging", fill = "Treatment") +theme_light() +theme( plot.title = element_text(colour = "black",face = "bold"))
+
 ```
