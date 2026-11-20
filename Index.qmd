@@ -31,7 +31,9 @@ library(multcompView)
 
 # Compiling data tables and managing duplicates
 
-## Pink seedlings
+## Seedlings
+
+### Pink seedlings
 
 Importing DATA
 
@@ -252,7 +254,7 @@ pink_data_clean <- pink_data_clean %>%
 
 ```
 
-## Orange data
+### Orange seedlings
 
 Importing data corresponding to new seedlings - "orange" data tables
 
@@ -450,7 +452,7 @@ Data_Orange <- Data_Orange %>%
 
 ```
 
-## Merge Pink and Orange Data
+### Merge both
 
 We combine the data table of the orange and the pink seedlings
 
@@ -507,7 +509,9 @@ We summarize the data by calculating the mean of each variable for each captor f
 # Lascar_mean = Lascar %>% group_by(id_capteur) %>% summarise (mean(celsius_c),mean(humidity_percent_rh), mean(dew_point_c))
 ```
 
-## Mapping of seedlings
+## Mapping
+
+### Mapping of seedlings
 
 We extract the locations for the orange and pink seedlings.
 
@@ -547,7 +551,7 @@ We can export the layers
 #st_write(Geom_Seedling %>% filter(Bague < 2000), "Mapping/Exported_layers/Pink_seeldlings.shp")
 ```
 
-## Mapping of sensors
+### Mapping of sensors
 
 It's the same method as for seedlings
 
@@ -571,7 +575,7 @@ We can export the layers
 #st_write(Geom_Sensor %>% filter(Capteur == "EL-USB-2"), "Mapping/Exported_layers/EL_USB_2.shp")
 ```
 
-## Distance between seedlings and skid trails
+### Distance between seedlings and skid trails
 
 Read the skid trails layer
 
@@ -595,7 +599,7 @@ We add this variable to our data frame : Merged_Pink_Orange
 Merged_Pink_Orange <- left_join(Merged_Pink_Orange, st_drop_geometry(Geom_Seedling_Transect))
 ```
 
-## Distance and ID of the nearest TMS4 sensor and the nearest EL-USB-2 sensor for each seedling
+### Distance and ID of the nearest TMS4 sensor and the nearest EL-USB-2 sensor for each seedling
 
 ```{r}
 # Both layers use EPSG:2972, so we can compute the minimum distances from each seedling to the nearest TMS4 and EL-USB-2 sensors
@@ -614,7 +618,7 @@ We add these variables to our data frame : Merged_Pink_Orange
 Merged_Pink_Orange <- Merged_Pink_Orange %>% left_join(., st_drop_geometry(Geom_Seedling))
 ```
 
-## We can write the data frame
+We can write the data frame
 
 ```{r}
 write.csv(Merged_Pink_Orange, "Exported_data/ARTEMIA_seedling_monitoring_ALLDATA_09_2026.csv")
@@ -624,7 +628,7 @@ write.csv(Merged_Pink_Orange, "Exported_data/ARTEMIA_seedling_monitoring_ALLDATA
 
 ## Importing Data
 
-### Data
+Data
 
 ```{r}
 TOMST <- read.csv("Captor_data/Alldata_TOMST.csv", header = T, sep = ";", dec = ",")
@@ -632,7 +636,7 @@ LASCARS <- read.csv("Captor_data/Alldata_LASCARS.csv", header = T, sep = ",", de
 Seedling <- Merged_Pink_Orange
 ```
 
-### Geometry Layers
+Geometry Layers
 
 ```{r}
 geom_lascar <- st_read("Mapping/Exported_layers/EL_USB_2.shp")
@@ -641,7 +645,7 @@ geom_stake <- st_read("Mapping/Previous_layers/Piquets_tous.gpkg")
 id_plot <- read.csv("Raw_data/polygone_plot.csv", sep = ",")
 ```
 
-## Compute the center of each plot
+Compute the center of each plot
 
 ```{r}
 # long format for id_plot
@@ -699,7 +703,7 @@ TOMST <- TOMST %>% mutate(serial_number = as.character(serial_number)) %>% mutat
 TOMST <- TOMST %>% separate(datetime_UTC, c("Date", "Time"), sep = " ") %>% mutate(Time = ifelse(is.na(Time), "0:00", Time)) %>% separate(Time, c("Hour", "Minutes"), convert = TRUE, remove = FALSE) %>% mutate(serial_number = as.character(serial_number))
 ```
 
-#### we compute the max value for each day and each sensors
+we compute the max value for each day and each sensors
 
 ```{r}
 max_tomst <- TOMST %>% group_by(serial_number, Date, height) %>% summarise(
@@ -749,7 +753,7 @@ LASCARS <- LASCARS %>% mutate(id_capteur = ifelse(id_capteur == '"T5_2_20"', "T5
 LASCARS <- LASCARS %>% separate(time, c("Date", "Time"), sep = " ") %>% mutate(Time = ifelse(is.na(Time), "0:00", Time)) %>% separate(Time, c("Hour", "Minutes"), convert = TRUE, remove = FALSE)
 ```
 
-#### we compute the max value for each day and each sensors
+we compute the max value for each day and each sensors
 
 ```{r}
 max_lascar <- LASCARS %>% group_by(id_capteur, Date) %>% summarise(
@@ -767,9 +771,9 @@ mean_max_lascar <- max_lascar %>% group_by(id_capteur) %>% summarise(
 )
 ```
 
-### We give to each plot his data
+We give to each plot his data
 
-#### First we find the intersection between our plot and our sensors to see which sensor are in which plot
+First we find the intersection between our plot and our sensors to see which sensor are in which plot
 
 ```{r}
 inter_lascar_plot <- st_intersection(geom_lascar, geom_plot)
@@ -778,7 +782,7 @@ inter_tomst_plot <- st_intersection(geom_tomst, geom_plot)
 # st_write(inter_tomst_plot, "Layers/inter_tomst_plot.gpkg")
 ```
 
-#### Then, we compute the distance between each plot center and his closest sensor.
+Then, we compute the distance between each plot center and his closest sensor.
 
 TOMST
 
@@ -815,7 +819,7 @@ geom_plot_lascar_chablis <- geom_plot %>% filter(Plot %in% c("TCB3_chablis", "TC
   mutate(dist_lascar = as.numeric(st_distance(geom_center_plot %>% filter(Plot %in% c("TCB3_chablis", "TCC3_chablis", "TCC4_chablis", "TCD4_chablis")), st_union(geom_lascar_chablis)))) %>% mutate(id_lascar = geom_lascar_chablis$Cd_cptr[st_nearest_feature(.,geom_lascar_chablis)])
 ```
 
-#### We can fusion the data
+We can fusion the data
 
 ```{r}
 fus_lascar <- bind_rows(geom_plot_lascar_no_chablis, geom_plot_lascar_chablis)
@@ -826,7 +830,7 @@ fus_tomst <- st_drop_geometry(fus_tomst)
 plot_sensor_dist <- left_join(fus_tomst, fus_lascar)
 ```
 
-#### We compute for each plot the mean of their sensors which intersect this plot
+We compute for each plot the mean of their sensors which intersect this plot
 
 TOMST
 
@@ -862,7 +866,7 @@ data_lascar_inter <- data_lascar_inter %>% dplyr::select(id_capteur, mean_max_T_
 )
 ```
 
-#### We give to each intersect plot the value of the sensors which intersect him
+We give to each intersect plot the value of the sensors which intersect him
 
 ```{r}
 # data according to distance
@@ -896,7 +900,7 @@ data_lascar_tomst <- data_lascar %>% mutate(
 )
 ```
 
-### We fusion the data to do the PCA
+We fusion the data to do the PCA
 
 ```{r}
 data <- data_lascar_tomst %>% dplyr::select(-dist_tomst, -dist_lascar, -id_tomst, -id_lascar) 
@@ -963,7 +967,7 @@ ggplot(ind, aes(x = PC1, y = PC2)) +
 
 ## Boxplot
 
-### We add the data transect and type for each sensor
+We add the data transect and type for each sensor
 
 TOMST
 
@@ -993,7 +997,7 @@ CO <- CO %>% mutate(Transect = ifelse(startsWith(Placette, "T1"), "T1", ifelse(s
 CO <- CO %>% mutate(type = ifelse(Transect == "T1" | Transect == "T2" | Transect == "T3" , "Ex_2024", ifelse(Transect == "T4" | Transect == "T5" | Transect == "T6", "Ex_2020", ifelse(endsWith(Placette, "chablis"), "control_chablis", "control"))))
 ```
 
-### Boxplot
+Boxplot
 
 ```{r}
 gg1 <- ggplot(data_env_lascar) + geom_boxplot(aes(x = type, y = mean_max_T_air, color = type))
@@ -1099,7 +1103,11 @@ Therefore, we chose to use a **negative binomiale distribution** (better than qu
 
 ### GLM negative binomial
 
+<<<<<<< HEAD
 Compare the model with the nul model
+=======
+## GLM negative binomial
+>>>>>>> 54d01ca93eefb21ebb3c6aae61e0f9e8ac59a88a
 
 ```{r}
 model_negbin_0 = MASS::glm.nb( n ~ 1, data = Natality_analysis) # nul model 
