@@ -27,7 +27,9 @@ library(rstatix)
 
 # Compiling data tables and managing duplicates
 
-## Pink seedlings
+## Seedlings
+
+### Pink seedlings
 
 Importing DATA
 
@@ -248,7 +250,7 @@ pink_data_clean <- pink_data_clean %>%
 
 ```
 
-## Orange data
+### Orange seedlings
 
 Importing data corresponding to new seedlings - "orange" data tables
 
@@ -446,7 +448,7 @@ Data_Orange <- Data_Orange %>%
 
 ```
 
-## Merge Pink and Orange Data
+### Merge both
 
 We combine the data table of the orange and the pink seedlings
 
@@ -503,7 +505,9 @@ We summarize the data by calculating the mean of each variable for each captor f
 # Lascar_mean = Lascar %>% group_by(id_capteur) %>% summarise (mean(celsius_c),mean(humidity_percent_rh), mean(dew_point_c))
 ```
 
-## Mapping of seedlings
+## Mapping
+
+### Mapping of seedlings
 
 We extract the locations for the orange and pink seedlings.
 
@@ -543,7 +547,7 @@ We can export the layers
 #st_write(Geom_Seedling %>% filter(Bague < 2000), "Mapping/Exported_layers/Pink_seeldlings.shp")
 ```
 
-## Mapping of sensors
+### Mapping of sensors
 
 It's the same method as for seedlings
 
@@ -567,7 +571,7 @@ We can export the layers
 #st_write(Geom_Sensor %>% filter(Capteur == "EL-USB-2"), "Mapping/Exported_layers/EL_USB_2.shp")
 ```
 
-## Distance between seedlings and skid trails
+### Distance between seedlings and skid trails
 
 Read the skid trails layer
 
@@ -591,7 +595,7 @@ We add this variable to our data frame : Merged_Pink_Orange
 Merged_Pink_Orange <- left_join(Merged_Pink_Orange, st_drop_geometry(Geom_Seedling_Transect))
 ```
 
-## Distance and ID of the nearest TMS4 sensor and the nearest EL-USB-2 sensor for each seedling
+### Distance and ID of the nearest TMS4 sensor and the nearest EL-USB-2 sensor for each seedling
 
 ```{r}
 # Both layers use EPSG:2972, so we can compute the minimum distances from each seedling to the nearest TMS4 and EL-USB-2 sensors
@@ -610,7 +614,7 @@ We add these variables to our data frame : Merged_Pink_Orange
 Merged_Pink_Orange <- Merged_Pink_Orange %>% left_join(., st_drop_geometry(Geom_Seedling))
 ```
 
-## We can write the data frame
+We can write the data frame
 
 ```{r}
 write.csv(Merged_Pink_Orange, "Exported_data/ARTEMIA_seedling_monitoring_ALLDATA_09_2026.csv")
