@@ -1043,7 +1043,7 @@ hist(Natality_analysis$n,breaks = 15) # it is Poisson law
 
 ```
 
-### GLM poisson 
+### GLM poisson
 
 Application conditions to the glm poisson
 
@@ -1208,7 +1208,7 @@ p1
 
 ## Effect of density
 
-### GLM Poisson 
+### GLM Poisson
 
 As for the previous model, we start by testing a Poisson model.
 
@@ -1289,7 +1289,7 @@ p2
 ## Study the characteristics of the new individuals
 
 ```{r}
-New_character = select(DATA_orange,Placette,Bague,Folmax_09.26,D_moy_09.26,N_feuil_09.26,Haut_cm_09.26) # selection of the variable of interest
+New_character = dplyr::select(DATA_orange,Placette,Bague,Folmax_09.26,D_moy_09.26,N_feuil_09.26,Haut_cm_09.26) # selection of the variable of interest
 
 New_character = subset(New_character, New_character$Placette !="TCZ4")
 New_character = subset(New_character, New_character$Placette !="TCZ3") # we are not considering the genetic control
@@ -1379,7 +1379,6 @@ ggplot(New_character, aes(x = factor(Logging), y = Haut_cm_09.26,)) +
 Final table with all the results
 
 ```{r}
-#| out-width: 80%
 
 # Calcul of median and quantile
 summary_data = New_character %>%
@@ -1446,7 +1445,7 @@ First selected the variable and creat variable for seedling densité par placett
 # Prepare the data set 
 DATA_mortality = subset(DATA, DATA$Bague<2000) # take only pink
 
-DATA_mortality = select(DATA_mortality,Transect,Placette,Type,Bague,Piquet_ref,Azimut,Dist_m,Etat_09.25,Etat_09.26,Folmax_09.25,Folmax_03.26,N_feuil_09.25,N_herb_09.25,Herb_1_09.25,Herb_2_09.25,Herb_3_09.25,Herb_4_09.25,Herb_5_09.25,N_feuil_03.26,N_herb_03.26,Herb_1_03.26,Herb_2_03.26,Herb_3_03.26,Herb_4_03.26,Herb_5_03.26, Dist_skid_trails,D_moy_09.25,D_moy_03.26) # select the variable
+DATA_mortality = dplyr::select(DATA_mortality,Transect,Placette,Type,Bague,Piquet_ref,Azimut,Dist_m,Etat_09.25,Etat_09.26,Folmax_09.25,Folmax_03.26,N_feuil_09.25,N_herb_09.25,Herb_1_09.25,Herb_2_09.25,Herb_3_09.25,Herb_4_09.25,Herb_5_09.25,N_feuil_03.26,N_herb_03.26,Herb_1_03.26,Herb_2_03.26,Herb_3_03.26,Herb_4_03.26,Herb_5_03.26, Dist_skid_trails,D_moy_09.25,D_moy_03.26) # select the variable
 
 # Take out the control genetic
 DATA_mortality = subset(DATA_mortality, DATA_mortality$Type !="CONTROL_GENET")
@@ -1484,7 +1483,7 @@ DATA_mortality$Herb_mean =  DATA_mortality$Herb_mean / 10 # to have frequencies
 DATA_mortality$Herb_plant = (DATA_mortality$Herb_mean * DATA_mortality$N_herb) / DATA_mortality$N_feuil
 
 # We can select the variables
-DATA_mortality_final = select(DATA_mortality,Placette,Type,Bague,Piquet_ref,Azimut,Dist_m,Etat_09.26,Folmax,Density,Herb_plant, Dist_skid_trails) # select the variable
+DATA_mortality_final = dplyr::select(DATA_mortality,Placette,Type,Bague,Piquet_ref,Azimut,Dist_m,Etat_09.26,Folmax,Density,Herb_plant, Dist_skid_trails) # select the variable
 
 # We add the logged variable
 DATA_mortality_final$Logging = Natality_analysis$Logging[match(DATA_mortality_final$Placette, Natality_analysis$Placette)]
@@ -1501,7 +1500,7 @@ DATA_mortality_final$Folmax = as.character(DATA_mortality_final$Folmax)
 DATA_mortality_final$Diameter = ifelse(is.na(DATA_mortality$D_moy_09.25),DATA_mortality$D_moy_03.26, DATA_mortality$D_moy_09.25)
 
 # Select 
-DATA_mortality_final = select(DATA_mortality_final,Placette,Type,Bague,Etat,Folmax,Density,Herb_plant,Logging, Diameter)
+DATA_mortality_final = dplyr::select(DATA_mortality_final,Placette,Type,Bague,Etat,Folmax,Density,Herb_plant,Logging, Diameter)
 
 DATA_mortality_final = na.omit(DATA_mortality_final)
 
@@ -1587,7 +1586,7 @@ lettres$.group = gsub(" ", "", lettres$.group)
 Fig4 = dplyr::left_join(Fig4, lettres[, c("Logging", ".group")],by = "Logging")
 Fig4$y_letter = Fig4$asymp.UCL + max(Fig4$asymp.UCL, na.rm = TRUE) * 0.08
 
-ggplot(Fig4, aes(x = Logging, y = prob)) +geom_point( aes(color = Logging),size = 3.5 ) +
+p3 = ggplot(Fig4, aes(x = Logging, y = prob)) +geom_point( aes(color = Logging),size = 3.5 ) +
   geom_errorbar( aes( ymin = asymp.LCL,ymax = asymp.UCL,color = Logging ),
                  width = 0.15,linewidth = 0.8) +
   geom_text( aes(y = y_letter, label = .group), color = "black",fontface = "bold",  size = 5 ) +
@@ -1595,6 +1594,11 @@ ggplot(Fig4, aes(x = Logging, y = prob)) +geom_point( aes(color = Logging),size 
   labs( x = NULL, y = "Pm",color = "Logging") +
   scale_y_continuous(expand = expansion(mult = c(0.05, 0.18))) +
   theme_minimal(base_size = 14)
+p3
+ggsave("Fig3.png",
+       plot = p3,
+       width = 14, height = 8
+)
 
 ```
 
@@ -1651,7 +1655,34 @@ pairwise.t.test(pop_increase_raw_bis$Net_increase,pop_increase_raw_bis$Logging,p
 
 # Now add to the graphic
 
-ggplot(pop_increase_raw_bis, aes(Logging, Net_increase, fill = Logging)) + geom_boxplot(outlier.shape = NA) + geom_jitter(width = 0.15, alpha = 0.7) +
-  labs( title = "Boxplot of the net augmentation of the population density", y = "Net increase of the population", x = "Logging", fill = "Treatment") +theme_light() +theme( plot.title = element_text(colour = "black",face = "bold"))
+pw = pairwise.t.test(x = pop_increase_raw_bis$Net_increase,g = pop_increase_raw_bis$Logging,p.adjust.method = "BH",pool.sd = FALSE)
+
+pw_df = as.data.frame(as.table(pw$p.value)) %>% filter(!is.na(Freq)) %>%rename( group1 = Var1,group2 = Var2,p.adj = Freq)
+
+p_values = pw_df$p.adj
+names(p_values) <- paste(pw_df$group1, pw_df$group2, sep = "-")
+
+letters_df = multcompView::multcompLetters( p_values, threshold = 0.05)$Letters
+
+letters_df = data.frame( Logging = names(letters_df),letters = unname(letters_df))
+
+y_range = diff(range(pop_increase_raw_bis$Net_increase, na.rm = TRUE))
+
+positions = pop_increase_raw_bis %>%group_by(Logging) %>%summarise( y.position = max(Net_increase, na.rm = TRUE) + 0.08 * y_range,.groups = "drop")
+
+letters_df = left_join(letters_df, positions, by = "Logging")
+
+# Graph
+p4 = ggplot(pop_increase_raw_bis, aes(x = Logging, y = Net_increase, fill = Logging)) +geom_boxplot( outlier.shape = NA, alpha = 0.8, width = 0.6, colour = "grey30" ) + geom_jitter(  width = 0.12, alpha = 0.65, size = 1.8, colour = "grey65") +
+  geom_text(data = letters_df,aes(x = Logging, y = y.position, label = letters),inherit.aes = FALSE,size = 5) +
+  scale_fill_manual( values = c(  "CONTROL" = "grey50", "EX_2020" = "#377EB8", "EX_2024" = "#238B45")) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.15)) ) +
+  labs( y = "Net increase", x = NULL ) +
+  theme_light()
+p4 
+ggsave("Fig4.png",
+       plot = p4,
+       width = 14, height = 8
+)
 
 ```

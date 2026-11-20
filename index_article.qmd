@@ -198,7 +198,7 @@ The model 1 allowed to significantly reduce the residual deviance compare to the
 ::: {#fig-1}
 ```{r}
 #| label: Figure 1
-#| out-width: 30%
+#| out-width: 100%
 knitr::include_graphics("image/Fig1.png")
 ```
 
@@ -210,7 +210,7 @@ The model 2 showed that the density of conspecific seedlings (D/10m2) and juveni
 ::: {#fig-2}
 ```{r}
 #| label: Figure 2
-#| out-width: 80%
+#| out-width: 100%
 
 knitr::include_graphics("image/Fig2.png") 
 
@@ -226,7 +226,8 @@ Seedling diameter and height differed significantly among logging modalities (Kr
 ::: {#tbl-1}
 ```{r}
 #| label: Table 1
-
+#| out-width: 100%
+knitr::include_graphics("image/Table1.png") 
 ```
 
 **New seedlings characteristics and comparison between logging modalities.** Values are medians \[Q1–Q3\]. Different letters indicate significant differences between logging modalities based on pairwise Wilcoxon tests with Holm correction (p \< 0.05)."
@@ -239,16 +240,8 @@ The best-fitting model explaining seedling and juvenile mortality (Pm) included 
 ::: {#fig-3}
 ```{r}
 #| label: Figure 3
-#| out-width: 80%
-ggplot(Fig4, aes(x = Logging, y = prob)) +geom_point( aes(color = Logging),size = 3.5 ) +
-  geom_errorbar( aes( ymin = asymp.LCL,ymax = asymp.UCL,color = Logging ),
-    width = 0.15,linewidth = 0.8) +
-  geom_text( aes(y = y_letter, label = .group), color = "black",fontface = "bold",  size = 5 ) +
-  scale_color_manual( values = c( "CONTROL" = "grey50", "EX_2020" = "#377EB8", "EX_2024" = "#238B45" )) +
-  labs( x = NULL, y = "Pm",color = "Logging") +
-  scale_y_continuous(expand = expansion(mult = c(0.05, 0.18))) +
-  theme_minimal(base_size = 14)
-
+#| out-width: 100%
+knitr::include_graphics("image/Fig3.png") 
 
 ```
 
@@ -259,35 +252,12 @@ ggplot(Fig4, aes(x = Logging, y = prob)) +geom_point( aes(color = Logging),size 
 
 First, one observation from the 2024 logging treatment was excluded from the analysis because it had a strong influence on the model (leverage \> 1), possibly due to the extrapolation described in the Materials and Methods section. Welch's ANOVA revealed a significant effect of logging treatment on the net increase in seedling and juvenile population (F = 6.9, p = 0.014). Post hoc comparisons indicated a tendency towards a greater net increase in plots logged in 2024 than in plots logged in 2020 and control plots, although these differences were not statistically significant (p = 0.061 and p = 0.057, respectively). No significant difference was detected between plots logged in 2020 and control plots (p = 0.116). These results are presented in `fig-4`.
 
-::: {#fig-4 fig-env="figure*"}
+::: {#fig-4}
 ```{r}
 #| label: Figure 4
-#| out-width: 80%
+#| out-width: 100%
 
-pw = pairwise.t.test(x = pop_increase_raw_bis$Net_increase,g = pop_increase_raw_bis$Logging,p.adjust.method = "BH",pool.sd = FALSE)
-
-pw_df = as.data.frame(as.table(pw$p.value)) %>% filter(!is.na(Freq)) %>%rename( group1 = Var1,group2 = Var2,p.adj = Freq)
-
-p_values = pw_df$p.adj
-names(p_values) <- paste(pw_df$group1, pw_df$group2, sep = "-")
-
-letters_df = multcompView::multcompLetters( p_values, threshold = 0.05)$Letters
-
-letters_df = data.frame( Logging = names(letters_df),letters = unname(letters_df))
-
-y_range = diff(range(pop_increase_raw_bis$Net_increase, na.rm = TRUE))
-
-positions = pop_increase_raw_bis %>%group_by(Logging) %>%summarise( y.position = max(Net_increase, na.rm = TRUE) + 0.08 * y_range,.groups = "drop")
-
-letters_df = left_join(letters_df, positions, by = "Logging")
-
-# Graph
-ggplot(pop_increase_raw_bis, aes(x = Logging, y = Net_increase, fill = Logging)) +geom_boxplot( outlier.shape = NA, alpha = 0.8, width = 0.6, colour = "grey30" ) + geom_jitter(  width = 0.12, alpha = 0.65, size = 1.8, colour = "grey65") +
-  geom_text(data = letters_df,aes(x = Logging, y = y.position, label = letters),inherit.aes = FALSE,size = 5) +
-  scale_fill_manual( values = c(  "CONTROL" = "grey50", "EX_2020" = "#377EB8", "EX_2024" = "#238B45")) +
-   scale_y_continuous(expand = expansion(mult = c(0.05, 0.15)) ) +
-  labs( y = "Net increase", x = NULL ) +
-  theme_light()
+knitr::include_graphics("image/Fig4.png") 
 
 ```
 
