@@ -23,6 +23,10 @@ library(ggpubr)
 library(lme4)
 library(lmtest)
 library(rstatix)
+library(ggeffects)
+library(multcomp)
+library(gt)
+library(multcompView)
 ```
 
 # Compiling data tables and managing duplicates
@@ -1009,6 +1013,8 @@ plot_grid(gg1, gg2, gg3, gg4, gg5, gg6, ncol = 2, nrow = 3)
 
 # Part 2 : Germination of new seedlings
 
+We first test all the following models with 4 logging modalities : EX2024, EX2020, CONTROL and CONTROL_CHABLIS. After analyzed all the results, it seems not necessary to discriminate the natural gap control and the control. Therefore, the results present in this article discriminate only 3 logging modalities : EX2024, EX2020 and the CONTROL (which include the natural gap).
+
 ```{r}
 DATA = read.csv("ARTEMIA_seedling_monitoring_ALLDATA_09_2026.csv", header=T, sep=",", dec=".") # import all the data we have treated
 
@@ -1020,28 +1026,34 @@ Natality_analysis = subset(DATA, DATA$Bague >= 2000)
 Natality_analysis = DATA_orange %>% count(Placette)
 Natality_analysis = Natality_analysis[-c(46,47), ] # delete TZ
 Natality_analysis$Logging = Plot_char$type[match(Natality_analysis$Placette,Plot_char$Placette)]
+Natality_analysis$Density = Density_seedlings$n[match(Natality_analysis$Placette, Density_seedlings$Placette)]
+Natality_analysis$Logging = ifelse(Natality_analysis$Logging=="CONTROL_CHABLIS", "CONTROL",Natality_analysis$Logging)
 
 Natality_analysis$n[is.na(Natality_analysis$n)] =0
 ```
+
+We therefore chose to use two separate models to investigate the effects of seedling density and logging. This distinction is important because these two effects are hierarchical: logging practices can directly influence the density of seedlings observed within the plots. Consequently, seedling density may partly reflect the effects of logging, rather than representing an entirely independent factor. Using separate models therefore allows us to disentangle these effects and assess their respective contributions.
+
+## Effect of logging
 
 Now we can explore the data with plot
 
 ```{r}
 hist(Natality_analysis$n,breaks = 15) # it is Poisson law
-ggplot(Natality_analysis, aes(x = factor(Logging),y=n)) + geom_boxplot() 
+
 ```
 
-## GLM poisson (processus de comptage)
+### GLM poisson 
 
-Application condition to the glm poisson
+Application conditions to the glm poisson
 
-- No surdespersion : I have a calcul to ckeck surdispersion
+- No surdespersion
 
-- Independance of the DATA (here yes, it is 1 value for 1 placette, no répétition)
+- Independance of the DATA (here yes, it is 1 value for 1 plot, no repetition)
 
 - Our data follow a poisson distribution
 
-We do the model
+We do the complete model
 
 ```{r}
 model_poisson = glm(n~Logging,family="poisson", data=Natality_analysis)
@@ -1079,22 +1091,33 @@ model_poisson |>
   performance::check_overdispersion()
 ```
 
-We can observe the dispersion ration : residual déviance (252.33) / DDL (41) = 6.846
+We can observe the dispersion ration : residual deviance (252.33) / DDL (41) = 6.846
 
 It is really superior to 0, there is surdispersion (p-value inferior to 0.05)
 
-Therefore, we chose to use a **negative binomiale distribution** (better than quasi-poisson model pour lesquels nous ne savons pas évaluer la correction de la surdispersion).
+Therefore, we chose to use a **negative binomiale distribution** (better than quasi-poisson model).
 
-Package MASS
+### GLM negative binomial
 
-## GLM negative binomial
+Compare the model with the nul model
 
 ```{r}
-model_negbin_0 = MASS::glm.nb( n ~ 1, data = Natality_analysis) # nul model AIC: 318.24 and  residual deviance = 55.087
+model_negbin_0 = MASS::glm.nb( n ~ 1, data = Natality_analysis) # nul model 
+summary(model_negbin_0) # AIC: 300.64 and  residual deviance = 48.259
 
-model_negbin_Logged = MASS::glm.nb( n ~ Logging, data = Natality_analysis) # we had the variable logging
-summary(model_negbin_Logged)# AIC: 303.99 and Residual deviance: 54.782
+model_negbin_Logged = MASS::glm.nb( n ~ Logging, data = Natality_analysis) # model with logging 
+summary(model_negbin_Logged)# AIC:  283.17 and Residual deviance: 46.828
+
+# Compare the nul model and the model 
+anova(model_negbin_Logged,model_negbin_0, test="Chisq") # The model with logging is better 
+
+anova(model_negbin_Logged)
+
 ```
+
+The inclusion of Logging significantly improved the fit of the negative binomial model compared to the null model (Likelihood Ratio Test: χ² = 21.47, df = 2, p \< 0.001), indicating that logging status significantly influences the response variable.
+
+We chech if the data really follow a negative binomiale law.
 
 ```{r}
 model_negbin_Logged |>
@@ -1103,27 +1126,25 @@ model_negbin_Logged |>
   performance::check_predictions(type = "discrete_both")
 ```
 
-We see that our data follow the negative binomial
+It matches.
+
+We test if no overdispersion is detected
 
 ```{r}
 model_negbin_Logged |> 
   performance::check_overdispersion()
 ```
 
-No overdispersion
+No overdispersion.
 
-We test if the variable explain significantly the number of seedlings per 10m2
-
-```{r}
-anova(model_negbin_Logged) # the type significaly explain the differences of new number of seedlings per plot
-```
+So we can now to post-hoc test to understand the effect of each logging modalities on the avearage number of new seedlings per plot.
 
 We can now test per pairs with emmeans
 
 ```{r}
-emm = emmeans(model_negbin_Logged,"Logging")
+emm = emmeans(model_negbin_Logged,"Logging",type="response")
 summary(emm, type ="response")
-pairs = (pairs(emm))
+pairs = pairs(emm,adjust = "tukey")
 summary(pairs)
 pairs = as.data.frame(pairs) 
 ```
@@ -1131,29 +1152,138 @@ pairs = as.data.frame(pairs)
 Now we can represent our data
 
 ```{r}
+# results of the model
+em_natality= emmeans(model_negbin_Logged, pairwise ~ Logging, type = "response",adjust = "tukey", mode="only")
+Fig1 <- as.data.frame(em_natality$emmeans)
 
-# Transforme the results of emmeans in table
-res = as.data.frame(pairs)
-res = res %>% filter(p.value < 0.05)
-res$group1 = str_split_fixed(res$contrast, " - ", 2)[, 1]
-res$group2 = str_split_fixed(res$contrast, " - ", 2)[, 2]
+# letters for significativity 
+lettres <- cld( em_natality$emmeans, adjust = "tukey",Letters = letters)
 
-res$label = paste0("\np = ", format.pval(res$p.value, digits = 2))
+lettres <- as.data.frame(lettres)
+lettres$.group <- gsub(" ", "", lettres$.group)
 
-# For the graphic
-maximum = max(Natality_analysis$n, na.rm = TRUE)
-pas = max(1, maximum * 0.12)
-res$y.position = maximum + pas *
-  seq_len(nrow(res))
+# Add letters to the data set
+Fig1 <- dplyr::left_join(Fig1,lettres[, c("Logging", ".group")],by = "Logging")
 
-# Now add to the graphic
+Fig1$y_letter <- Fig1$asymp.UCL +max(Fig1$asymp.UCL, na.rm = TRUE) * 0.08
 
-ggplot(Natality_analysis, aes(Logging, n, fill = Logging)) + geom_boxplot(outlier.shape = NA) + geom_jitter(width = 0.15, alpha = 0.7) +
-  stat_pvalue_manual(res,label = "label",xmin = "group1", xmax = "group2",y.position = "y.position",tip.length = 0.01,inherit.aes = FALSE) +
-  scale_y_continuous(expand = expansion(mult = c(0.05, 0.25))) +
-  labs( title = "Boxplot of the number of new seedlings per 10m2 according to logging", y = "Number of new seedlings/10m2", x = "Logging", fill = "Traitement") +theme_light() +theme( plot.title = element_text(colour = "black",face = "bold"))
+p1= ggplot(Fig1, aes(x = Logging, y = response)) +
+ geom_jitter( data = Natality_analysis, aes(x = Logging, y = n), inherit.aes = FALSE, width = 0.12, color = "grey75", alpha = 0.6, size = 1.8) +
+  geom_point(aes(color = Logging),size = 3.5) +
+  geom_errorbar(aes(ymin = asymp.LCL,ymax = asymp.UCL, color = Logging),
+    width = 0.15,linewidth = 0.8 ) +
+  geom_text(
+    aes(y = y_letter, label = .group),
+    color = "black",
+    fontface = "bold",
+    size = 5
+  ) +
+  scale_color_manual(
+    values = c(
+      "CONTROL" = "grey50",
+      "EX_2020" = "#377EB8",
+      "EX_2024" = "#238B45"
+    )
+  ) +
+  
+  labs(
+    x = NULL,
+    y = "N/10 m²",
+    color=NULL
+  ) +
+  
+  scale_y_continuous(
+    expand = expansion(mult = c(0.05, 0.18))
+  ) +
+  theme_minimal(base_size = 14)
+
+ggsave("Fig1.png",
+       plot = p1,
+       width = 14, height = 8
+)
+p1
 
 
+```
+
+## Effect of density
+
+### GLM Poisson 
+
+As for the previous model, we start by testing a Poisson model.
+
+```{r}
+model_poisson = glm(n ~ Density,family="poisson", data=Natality_analysis)
+```
+
+We know that the data do not follow perfectly a poisson law. We check if the model do not overdisperse.
+
+```{r}
+summary(model_poisson)
+model_poisson |> 
+  performance::check_overdispersion()
+```
+
+The model overdisperse. Therefore we conduct a negative binomial model.
+
+### GLM negative binomiale
+
+```{r}
+model_negbin_0 = MASS::glm.nb( n ~ 1, data = Natality_analysis) # null model
+
+model_negbin_density = MASS::glm.nb( n ~ Density, data = Natality_analysis) # just density
+summary(model_negbin_Logged_3)# AIC: 261.77 and Residual deviance: 45.193
+Anova(model_negbin_Logged_3) # density explain 
+```
+
+We check if the data follow a negative binomial law : YES
+
+```{r}
+model_negbin_density |>
+  guideR::observed_vs_theoretical()
+model_negbin_density |>
+  performance::check_predictions(type = "discrete_both")
+```
+
+We check if there is no overdispersion : NON
+
+```{r}
+model_negbin_density |> 
+  performance::check_overdispersion()
+```
+
+We test if the variable explain significantly the number of seedlings per 10m2
+
+```{r}
+Anova(model_negbin_density) # the type significaly explain the differences of new number of seedlings per plot
+```
+
+Graphic representation
+
+```{r}
+# Create value
+newdata = data.frame(Density = seq(min(Natality_analysis$Density),
+                max(Natality_analysis$Density),
+                length.out = 100))
+
+# Predict
+pred = predict(model_negbin_Logged_3, newdata,
+                type = "link",
+                se.fit = TRUE)
+
+newdata$fit <- exp(pred$fit)
+newdata$lower <- exp(pred$fit - 1.96 * pred$se.fit)
+newdata$upper <- exp(pred$fit + 1.96 * pred$se.fit)
+
+p2 = ggplot() +geom_point(data = Natality_analysis,aes(x = Density, y = n),alpha = 0.5,size = 2) + geom_ribbon(data = newdata,aes(x = Density, ymin = lower,ymax = upper),alpha = 0.2,fill = "steelblue") + geom_line(data = newdata,aes(x = Density, y = fit),color = "steelblue", linewidth = 1.2) +theme_classic() + labs(x = "D/10 m²",  y = "N/10 m²")+ annotate(
+  "text", x = 25, y = 25, label = "LR-χ² = 67.75\np < 0.001", size = 4, hjust = 0
+)
+
+ggsave("Fig2.png",
+       plot = p2,
+       width = 14, height = 8
+)
+p2
 ```
 
 ## Study the characteristics of the new individuals
@@ -1167,7 +1297,8 @@ New_character = subset(New_character, New_character$Placette !="TCZ3") # we are 
 # Add the logged caracteristic of each plot
 New_character$Logging = Natality_analysis$Logging[match (New_character$Placette,Natality_analysis$Placette)] 
 
-New_character$Type = ifelse(New_character$Logging == "no logging"|New_character$Logging == "natural opening", "no logging",New_character$Logging)
+New_character$Logging = ifelse(New_character$Logging=="CONTROL_CHABLIS","CONTROL",New_character$Logging)
+
 ```
 
 We will explore by plot :
@@ -1175,10 +1306,6 @@ We will explore by plot :
 ```{r}
 boxplot(New_character$D_moy_09.26~New_character$Logging) # seems to be bigger for exploited area
 boxplot(New_character$Haut_cm_09.26~New_character$Logging)# not a lot of difference
-boxplot(New_character$N_feuil_09.26~New_character$Logging) # more leaf for 2024
-boxplot(New_character$Folmax_09.26~New_character$Logging) # almost only 1 foliole max
-ggplot(New_character, aes(x=D_moy_09.26, y=Haut_cm_09.26, color=Type)) + geom_point()+geom_smooth(method = "glm")
-
 ```
 
 Now starting the models
@@ -1194,9 +1321,9 @@ plot(new_diameter)
 
 # We did a Krustal-Wallis test
 krustal_diameter= kruskal.test(D_moy_09.26 ~ Logging, data  = New_character) # significant difference
-
+krustal_diameter
 # Then test post hoc
-wilcox_test(New_character,D_moy_09.26~Logging, paired = F, p.adjust.method = "holm")
+pairwise_wilcox_test(New_character,D_moy_09.26~Logging, paired = F, p.adjust.method = "holm")
 
 # Graphique representation (do not keep for the report)
 ggplot(New_character, aes(x = factor(Logging), y = D_moy_09.26,)) +
@@ -1247,6 +1374,68 @@ ggplot(New_character, aes(x = factor(Logging), y = Haut_cm_09.26,)) +
   scale_fill_viridis_d() +
   labs(title = "Height of new seedlings according to the condition of logging",x = "Logging condition", y = "Height (cm)") +
   theme_minimal()
+```
+
+Final table with all the results
+
+```{r}
+#| out-width: 80%
+
+# Calcul of median and quantile
+summary_data = New_character %>%
+  group_by(Logging) %>%
+  summarise(
+    Diameter = paste0(
+      round(median(D_moy_09.26, na.rm = TRUE), 1), " [",
+      round(quantile(D_moy_09.26, 0.25, na.rm = TRUE), 1), "–",
+      round(quantile(D_moy_09.26, 0.75, na.rm = TRUE), 1), "]"
+    ),
+    Height = paste0(
+      round(median(Haut_cm_09.26, na.rm = TRUE), 1), " [",
+      round(quantile(Haut_cm_09.26, 0.25, na.rm = TRUE), 1), "–",
+      round(quantile(Haut_cm_09.26, 0.75, na.rm = TRUE), 1), "]"
+    ),
+    .groups = "drop"
+  )
+
+# Post hoc test (diameter)
+test_diameter = New_character %>% pairwise_wilcox_test( D_moy_09.26 ~ Logging, p.adjust.method = "holm",exact = FALSE)
+
+# Post hoc test (height)
+test_height = New_character %>%pairwise_wilcox_test(Haut_cm_09.26 ~ Logging, p.adjust.method = "holm",exact = FALSE)
+
+# function to generate the letters
+get_letters = function(test_results) {
+  p_values = test_results$p.adj
+  names(p_values) = paste(
+    test_results$group1,
+    test_results$group2,
+    sep = "-"
+  )
+  letters = multcompView::multcompLetters(
+    p_values,
+    threshold = 0.05
+  )$Letters
+  data.frame(
+    Logging = names(letters),
+    letters = letters
+  )
+}
+
+# Letters for each variable
+letters_diameter = get_letters(test_diameter)
+letters_height= get_letters(test_height)
+
+summary_data = New_character %>%group_by(Logging) %>% summarise(D_moy_09.26 = paste0(round(median(D_moy_09.26, na.rm = TRUE), 1)," [", round(quantile(D_moy_09.26, 0.25, na.rm = TRUE), 1),"–",round(quantile(D_moy_09.26, 0.75, na.rm = TRUE), 1),"]"),Haut_cm_09.26 = paste0(round(median(Haut_cm_09.26, na.rm = TRUE), 1)," [",round(quantile(Haut_cm_09.26, 0.25, na.rm = TRUE), 1), "–", round(quantile(Haut_cm_09.26, 0.75, na.rm = TRUE), 1), "]"), .groups = "drop")
+
+results_table = summary_data %>% left_join(letters_diameter, by = "Logging") %>% rename(letter_diameter = letters) %>%left_join(letters_height, by = "Logging") %>% rename(letter_height = letters) %>%
+  mutate(D_moy_09.26 = paste(D_moy_09.26, "(", letter_diameter, ")"), Haut_cm_09.26 = paste(Haut_cm_09.26, "(", letter_height, ")")) %>% dplyr::select(  Logging, D_moy_09.26,Haut_cm_09.26)
+
+final_table = results_table %>%gt() %>%cols_label(D_moy_09.26 = "Diameter (mm)", Haut_cm_09.26 = "Height (cm)" ) %>%cols_align( align = "center",columns = everything())
+
+final_table
+
+
 ```
 
 # Analyse the mortality of the seedlings
@@ -1300,6 +1489,8 @@ DATA_mortality_final = select(DATA_mortality,Placette,Type,Bague,Piquet_ref,Azim
 # We add the logged variable
 DATA_mortality_final$Logging = Natality_analysis$Logging[match(DATA_mortality_final$Placette, Natality_analysis$Placette)]
 
+DATA_mortality_final$Logging = ifelse(DATA_mortality_final$Logging=="CONTROL_CHABLIS", "CONTROL",DATA_mortality_final$Logging)
+
 # We transform V into 1 en Morte into 0
 DATA_mortality_final$Etat = ifelse(DATA_mortality_final$Etat_09.26=="V",0,1)
 
@@ -1323,27 +1514,31 @@ nul_model_mortality = glmer(Etat ~1 + (1 | Placette), data=DATA_mortality_final,
 summary(nul_model_mortality) #  2274.2 et deviance = 2270.2
 
 model1_mortality = glmer(Etat~ Logging + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model1_mortality)# 2251.7  et deviance = 2241.7
+summary(model1_mortality)# 2249.8  et deviance = 2241.8 
 Anova(model1_mortality) # Logging is significant
 
+model1_mortality_bis = glmer(Etat~ Density + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
+summary(model1_mortality_bis) # AIC=   2267.7  and deviance = 2261.7
+Anova(model1_mortality_bis) # density is significant
+
 model2_mortality = glmer(Etat~ Logging + Density + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model2_mortality) # AIC=  2253.7  and deviance = 2241.7
+summary(model2_mortality) # AIC=  2251.8  and deviance = 2241.8
 Anova(model2_mortality, type = 2) # density is not significant
 
 model3_mortality = glmer(Etat~ Logging + Herb_plant + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model3_mortality) # AIC : 2240.5 and deviance : 2228.5 
+summary(model3_mortality) # AIC : 2238.6 and deviance :  2228.6 
 Anova(model3_mortality, type = 2) # Herb_plant is significant
 
 model3_mortality_bis = glmer(Etat~ Logging + Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model3_mortality_bis) # AIC :  2182.6  and deviance : 2170.6 
+summary(model3_mortality_bis) # AIC :  2180.7  and deviance : 2170.7 
 Anova(model3_mortality_bis, type = 2) # Diameter is highly significant
 
 model4_mortality = glmer(Etat~ Logging * Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model4_mortality) # AIC :   2183.2     and deviance : 2165.2
-Anova(model4_mortality, type = 2) # The interaction is not significant
+summary(model4_mortality) # AIC :   2179.4     and deviance : 2165.4 
+Anova(model4_mortality, type = 2) # The interaction almost significant
 
 model5_mortality = glmer(Etat~ Logging + Herb_plant + Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model5_mortality) # AIC :   2184.4    and deviance :  2170.4 (we can not use the number of leaflet because it is to unbalanced)
+summary(model5_mortality) # AIC :   2182.5    and deviance :  2170.5  (we can not use the number of leaflet because it is to unbalanced)
 Anova(model5_mortality, type = 2) # herbivory is not significant
 
 
@@ -1357,8 +1552,8 @@ Best model
 
 ```{r}
 model_mortality = glmer(Etat~ Logging + Diameter + (1 | Placette), data=DATA_mortality_final,family = binomial(link="logit"))
-summary(model3_mortality_bis) # AIC : 2277.7 and deviance : 2265.7 
-Anova(model3_mortality_bis, type = 2) # Diameter is highly significant
+summary(model_mortality) # AIC : 2277.7 and deviance : 2265.7 
+Anova(model_mortality, type = 2) # Diameter is highly significant
 ```
 
 We do emmeans test
@@ -1374,30 +1569,33 @@ ggplot(DATA_mortality_final, aes(x = Diameter, y = Etat)) + geom_point(alpha=1/2
   stat_smooth(method = "glm", method.args = list(family=binomial), se = TRUE) + xlab("Diameter") +
   ylab("Probability of survival") +
   ggtitle("Probability of survivial of  D. guyanensis seedlings according to diameter")+theme_minimal() +   theme(plot.title = element_text(colour = "black", face = "bold")) + annotate("text",x=7,y=0.75, label = "Chisq = 56.184,p-value = 6.599e-14",)
+
 ```
 
 Graphic of the probability of survival according to the logged parameter
 
 ```{r}
-em_mortality = emmeans(model_mortality, pairwise ~  Logging, type = "response",adjust = "tukey", mode="only")
-em_mortality = as.data.frame(em_mortality$emmeans)
+# Marginal mean estimation
+emm_mortality = emmeans(model_mortality, ~ Logging,type = "response")
+Fig4 = as.data.frame(emm_mortality)
 
-p19 = ggplot(em_mortality, aes(x = Logging, y = prob)) +
-  geom_point(position = position_dodge(width = 0.3), size = 3) +
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), 
-                position = position_dodge(width = 0.3), 
-                width = 0.2) +
-  labs(
-    title = "Probability of survival of D. guanensis seedlings according to logging",
-    subtitle = "Values corresponding to the estimated marginal mean probabilities by emmeans function",
-    x = "Condition of logging",
-    y = "Probability of survival"
-  ) +
-  theme_minimal()+
-  theme(plot.title = element_text(colour = "black", face = "bold"))+
-  theme(plot.subtitle = element_text(colour = "black", face = "italic"))
+# Post hoc and letters comparaison
+lettres = multcomp::cld(emm_mortality, adjust = "tukey",Letters = letters)
+lettres = as.data.frame(lettres)
+lettres$.group = gsub(" ", "", lettres$.group)
 
-p19
+Fig4 = dplyr::left_join(Fig4, lettres[, c("Logging", ".group")],by = "Logging")
+Fig4$y_letter = Fig4$asymp.UCL + max(Fig4$asymp.UCL, na.rm = TRUE) * 0.08
+
+ggplot(Fig4, aes(x = Logging, y = prob)) +geom_point( aes(color = Logging),size = 3.5 ) +
+  geom_errorbar( aes( ymin = asymp.LCL,ymax = asymp.UCL,color = Logging ),
+                 width = 0.15,linewidth = 0.8) +
+  geom_text( aes(y = y_letter, label = .group), color = "black",fontface = "bold",  size = 5 ) +
+  scale_color_manual( values = c( "CONTROL" = "grey50", "EX_2020" = "#377EB8", "EX_2024" = "#238B45" )) +
+  labs( x = NULL, y = "Pm",color = "Logging") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.18))) +
+  theme_minimal(base_size = 14)
+
 ```
 
 # Final model : Net increased in population density
@@ -1421,6 +1619,7 @@ Here, net population increased with the raw data
 
 ```{r}
 pop_increase_raw = DATA_mortality_final[, c(1,4,8)] %>% group_by(Placette,Logging) %>% summarise(dead = sum(Etat))
+pop_increase_raw$Logging = ifelse(pop_increase_raw$Logging=="CONTROL_CHABLIS", "CONTROL",pop_increase_raw$Logging)
 pop_increase_raw$New_seedlings = Natality_analysis$n[match(Natality_analysis$Placette,pop_increase_raw$Placette)]
 pop_increase_raw$New_seedlings = pop_increase_raw$New_seedlings *2
 pop_increase_raw$Net_increase = pop_increase_raw$New_seedlings - pop_increase_raw$dead
@@ -1437,23 +1636,22 @@ plot(test_net_increase) # the point 4 influence a lot the model ...
 
 # We redo the model without point 4 
 pop_increase_raw_bis = pop_increase_raw[-4,] # put out the point 4
-pop_increase_raw_bis$Logging_bis = ifelse(pop_increase_raw_bis$Logging=="CONTROL_CHABLIS","CONTROL",pop_increase_raw_bis$Logging)
 test_net_increase_bis= lm(pop_increase_raw_bis$Net_increase~pop_increase_raw_bis$Logging)
 shapiro.test(test_net_increase_bis$residuals) # normal
 bptest(test_net_increase_bis) # not homocedasticity
 dwtest(test_net_increase_bis)# independant
-plot(test_net_increase) 
+plot(test_net_increase_bis) 
 
 boxplot(pop_increase_raw_bis$Net_increase~pop_increase_raw_bis$Logging)
 
 # We can do a ANOVA with Welsh correction 
-test_net_increase_bis = oneway.test(pop_increase_raw_bis$Net_increase~pop_increase_raw_bis$Logging_bis, var.equal = F)
+test_net_increase_bis = oneway.test(pop_increase_raw_bis$Net_increase~pop_increase_raw_bis$Logging, var.equal = F)
 test_net_increase_bis # p-value = 0.03369
-pairwise.t.test(pop_increase_raw_bis$Net_increase,pop_increase_raw_bis$Logging_bis,pool.sd=F) # mean significatly higher for ex2024
+pairwise.t.test(pop_increase_raw_bis$Net_increase,pop_increase_raw_bis$Logging,pool.sd=F) # mean significatly higher for ex2024
 
 # Now add to the graphic
 
-ggplot(pop_increase_raw_bis, aes(Logging_bis, Net_increase, fill = Logging_bis)) + geom_boxplot(outlier.shape = NA) + geom_jitter(width = 0.15, alpha = 0.7) +
+ggplot(pop_increase_raw_bis, aes(Logging, Net_increase, fill = Logging)) + geom_boxplot(outlier.shape = NA) + geom_jitter(width = 0.15, alpha = 0.7) +
   labs( title = "Boxplot of the net augmentation of the population density", y = "Net increase of the population", x = "Logging", fill = "Treatment") +theme_light() +theme( plot.title = element_text(colour = "black",face = "bold"))
 
 ```
